@@ -1,0 +1,8 @@
+chạy môi trường ảo 
+source venv/Scripts/activate
+
+chạy dự án
+uvicorn app.main:app --reload
+
+phần kế là phần liên quan đến các api:
+
