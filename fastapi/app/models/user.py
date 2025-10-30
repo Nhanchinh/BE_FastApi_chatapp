@@ -1,4 +1,7 @@
-from typing import Optional, TypedDict
+from typing import Literal, Optional, TypedDict
+
+
+UserRole = Literal["admin", "user"]
 
 
 class UserDocument(TypedDict, total=False):
@@ -7,5 +10,6 @@ class UserDocument(TypedDict, total=False):
     email: str
     hashed_password: str
     full_name: Optional[str]
+    role: UserRole
 
 

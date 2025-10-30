@@ -63,6 +63,22 @@ async def seed_test_user(user_service: UserService = Depends(get_user_service)) 
     user = await user_service.get_or_create_test_user(
         email="test@example.com",
         password="secret123",
-        full_name="Test User"
+        full_name="Test User",
+        role="user"
+    )
+    return user
+
+
+@router.post("/seed-admin", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
+async def seed_admin_user(user_service: UserService = Depends(get_user_service)) -> UserPublic:
+    """
+    Router: Seed admin user
+    -> Tạo hoặc lấy admin user để test
+    """
+    user = await user_service.get_or_create_test_user(
+        email="admin@example.com",
+        password="admin123",
+        full_name="Admin User",
+        role="admin"
     )
     return user

@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import UserPublic
@@ -11,7 +11,7 @@ class UserService:
     def __init__(self, user_repository: UserRepository):
         self.user_repository = user_repository
 
-    async def register_user(self, email: str, password: str, full_name: Optional[str]) -> UserPublic:
+    async def register_user(self, email: str, password: str, full_name: Optional[str], role: str = "user") -> UserPublic:
         """
         Đăng ký user mới
         - Validate email đã tồn tại chưa
@@ -31,9 +31,10 @@ class UserService:
             email=email,
             hashed_password=hashed_password,
             full_name=full_name,
+            role=role
         )
 
-        return UserPublic(id=new_id, email=email, full_name=full_name)
+        return UserPublic(id=new_id, email=email, full_name=full_name, role=role)
 
     async def authenticate_user(self, email: str, password: str) -> dict:
         """
@@ -53,7 +54,7 @@ class UserService:
 
         return user
 
-    async def get_or_create_test_user(self, email: str, password: str, full_name: str) -> UserPublic:
+    async def get_or_create_test_user(self, email: str, password: str, full_name: str, role: str = "user") -> UserPublic:
         """
         Tạo hoặc lấy test user (để seed data)
         - Kiểm tra user đã tồn tại chưa
@@ -66,7 +67,8 @@ class UserService:
             return UserPublic(
                 id=existing["_id"],
                 email=existing["email"],
-                full_name=existing.get("full_name")
+                full_name=existing.get("full_name"),
+                role=existing.get("role", "user")
             )
 
         # Tạo user mới
@@ -75,7 +77,33 @@ class UserService:
             email=email,
             hashed_password=hashed_password,
             full_name=full_name,
+            role=role
         )
 
-        return UserPublic(id=new_id, email=email, full_name=full_name)
+        return UserPublic(id=new_id, email=email, full_name=full_name, role=role)
+
+    async def get_all_users(self) -> List[UserPublic]:
+        """
+        Lấy tất cả users (cho admin)
+        """
+        users = await self.user_repository.get_all_users()
+        return [
+            UserPublic(
+                id=user["_id"],
+                email=user["email"],
+                full_name=user.get("full_name"),
+                role=user.get("role", "user")
+            )
+            for user in users
+        ]
+
+    async def delete_user(self, user_id: str) -> bool:
+        """
+        Xóa user theo ID (cho admin)
+        """
+        user = await self.user_repository.get_user_by_id(user_id)
+        if not user:
+            raise ValueError("User not found")
+        
+        return await self.user_repository.delete_user(user_id)
 

@@ -39,3 +39,9 @@ def decode_access_token(token: str) -> Dict[str, Any]:
         raise ValueError("Invalid token") from exc
 
 
+def get_user_id_from_token(token: str) -> str:
+    """Lấy user_id từ token"""
+    payload = decode_access_token(token)
+    return payload.get("sub")
+
+

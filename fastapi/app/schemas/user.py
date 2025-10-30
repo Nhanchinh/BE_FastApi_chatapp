@@ -1,6 +1,9 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, EmailStr, Field
+
+
+UserRole = Literal["admin", "user"]
 
 
 class UserBase(BaseModel):
@@ -18,12 +21,14 @@ class UserInDB(UserBase):
 
     id: str
     full_name: Optional[str] = None
+    role: UserRole = "user"
 
 
 class UserPublic(UserBase):
 
     id: str
     full_name: Optional[str] = None
+    role: UserRole = "user"
 
 
 class Token(BaseModel):

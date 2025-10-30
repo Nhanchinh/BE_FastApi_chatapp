@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.database.connection import close_mongo_connection, connect_to_mongo, get_database
+from app.routers.admin import router as admin_router
 from app.routers.auth import router as auth_router
 
 
@@ -20,6 +21,7 @@ app = FastAPI(title="FastAPI Auth with MongoDB", lifespan=lifespan)
 
 
 app.include_router(auth_router)
+app.include_router(admin_router)
 
 
 @app.get("/")
