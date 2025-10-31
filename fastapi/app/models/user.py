@@ -11,5 +11,7 @@ class UserDocument(TypedDict, total=False):
     hashed_password: str
     full_name: Optional[str]
     role: UserRole
+    friends: list[str]
+    pending_requests: list[str]
 
 

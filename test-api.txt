@@ -61,6 +61,60 @@ Các API hiện có
      curl -X DELETE http://localhost:8000/admin/users/$USER_ID \
        -H "Authorization: Bearer $ADMIN_TOKEN"
 
+8) FRIENDSHIP API (Tính năng kết bạn)
+
+8.1) POST /friends/request/{target_user_id} (yêu cầu token)
+    - Mô tả: Gửi lời mời kết bạn đến user khác
+    - Header: Authorization: Bearer <JWT_USER>
+    - Curl:
+      USER_TOKEN="<JWT_USER>"
+      TARGET_ID="64f0b1c2e3d45a6789abcd02"
+      curl -X POST http://localhost:8000/friends/request/$TARGET_ID \
+        -H "Authorization: Bearer $USER_TOKEN"
+
+8.2) POST /friends/accept/{from_user_id} (yêu cầu token)
+    - Mô tả: Chấp nhận lời mời kết bạn từ một user
+    - Header: Authorization: Bearer <JWT_USER>
+    - Curl:
+      USER_TOKEN="<JWT_USER>"
+      FROM_ID="64f0b1c2e3d45a6789abcd03"
+      curl -X POST http://localhost:8000/friends/accept/$FROM_ID \
+        -H "Authorization: Bearer $USER_TOKEN"
+
+8.3) DELETE /friends/request/{user_id} (yêu cầu token)
+    - Mô tả: Huỷ hoặc từ chối lời mời kết bạn giữa hai user (gửi hoặc nhận)
+    - Header: Authorization: Bearer <JWT_USER>
+    - Curl:
+      USER_TOKEN="<JWT_USER>"
+      USER_ID="64f0b1c2e3d45a6789abcd04"
+      curl -X DELETE http://localhost:8000/friends/request/$USER_ID \
+        -H "Authorization: Bearer $USER_TOKEN"
+
+8.4) GET /friends/list (yêu cầu token)
+    - Mô tả: Lấy danh sách bạn bè của bản thân
+    - Header: Authorization: Bearer <JWT_USER>
+    - Curl:
+      USER_TOKEN="<JWT_USER>"
+      curl -X GET http://localhost:8000/friends/list \
+        -H "Authorization: Bearer $USER_TOKEN"
+
+8.5) GET /friends/requests (yêu cầu token)
+    - Mô tả: Lấy danh sách các lời mời kết bạn bạn đã nhận (trạng thái pending)
+    - Header: Authorization: Bearer <JWT_USER>
+    - Curl:
+      USER_TOKEN="<JWT_USER>"
+      curl -X GET http://localhost:8000/friends/requests \
+        -H "Authorization: Bearer $USER_TOKEN"
+
+8.6) DELETE /friends/{friend_id} (yêu cầu token)
+    - Mô tả: Hủy kết bạn với một người (xóa khỏi danh sách bạn bè của nhau)
+    - Header: Authorization: Bearer <JWT_USER>
+    - Curl:
+      USER_TOKEN="<JWT_USER>"
+      FRIEND_ID="64f0b1c2e3d45a6789abcd05"
+      curl -X DELETE http://localhost:8000/friends/$FRIEND_ID \
+        -H "Authorization: Bearer $USER_TOKEN"
+
 Ghi chú
 - /auth/login dùng Content-Type: application/x-www-form-urlencoded với trường username, password.
 - Các API /admin/* yêu cầu JWT token của user có role admin qua header Authorization: Bearer <token>.
