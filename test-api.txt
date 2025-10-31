@@ -118,3 +118,131 @@ Các API hiện có
 Ghi chú
 - /auth/login dùng Content-Type: application/x-www-form-urlencoded với trường username, password.
 - Các API /admin/* yêu cầu JWT token của user có role admin qua header Authorization: Bearer <token>.
+
+
+9) CHAT API (Nhắn tin 1-1)
+
+9.1) WebSocket /messages/ws/chat/{user_id}
+   - Mô tả: Kết nối realtime cho user. Sử dụng JWT để xác thực WebSocket qua query `?token=<JWT>`.
+   - URL WS: ws://localhost:8000/messages/ws/chat/{user_id}?token=<JWT>&resume_since=<ts_ms>
+   - Gửi message (JSON): {"from":"user123","to":"user456","content":"Hello!","client_message_id":"<uuid>"}
+   - Gửi typing: {"type":"typing_start","from":"user123","to":"user456"} (hoặc typing_stop)
+   - Server phản hồi ACK cho sender: {"ack":{"message_id":"...","conversation_id":"...","client_message_id":"..."}}
+   - Server đẩy message tới receiver: {"type":"message","from":"user123","content":"Hello!","ack":{...}}
+   - Multi-device: Nếu cấu hình REDIS_URL, fanout qua Redis tới tất cả thiết bị của user.
+   - Đánh dấu delivered (qua WS): {"type":"delivered","message_id":"...","conversation_id":"...","from":"user456","to":"user123"}
+   - Đánh dấu seen (qua WS): {"type":"seen","message_id":"...","conversation_id":"...","from":"user456","to":"user123"}
+   - Khi nhận delivered/seen, server broadcast lại sự kiện tương ứng tới phía kia.
+   - Reconnect/Resume: truyền query `resume_since` (millisecond epoch). Server sẽ gửi lại các message tới bạn sau thời điểm đó để bù trễ.
+
+9.2) GET /conversations (yêu cầu token)
+   - Mô tả: Lấy danh sách hội thoại (giống phòng chat 1-1). Cursor-based pagination.
+   - Query: limit (<=100), cursor ("tsMs:objectId")
+   - Curl:
+     USER_TOKEN="<JWT_USER>"
+     curl -X GET "http://localhost:8000/conversations?limit=20" \
+       -H "Authorization: Bearer $USER_TOKEN"
+   - Phản hồi: { "items": [ {"_id","participants","last_message_at","last_message_preview","unread_counters"}... ], "next_cursor": "..." }
+
+9.3) GET /conversations/{id}/messages (yêu cầu token)
+   - Mô tả: Lấy tin nhắn trong 1 hội thoại, phân trang bằng cursor.
+   - Query: limit (<=200), cursor ("tsMs:objectId")
+   - Curl:
+     USER_TOKEN="<JWT_USER>"
+     CONV_ID="<conversation_id>"
+     curl -X GET "http://localhost:8000/conversations/$CONV_ID/messages?limit=50" \
+       -H "Authorization: Bearer $USER_TOKEN"
+
+9.4) GET /messages/unread (yêu cầu token)
+   - Mô tả: Lấy tin chưa đọc. Có thể lọc theo 1 người gửi bằng from_user_id.
+   - Curl:
+     USER_TOKEN="<JWT_USER>"
+     curl -X GET "http://localhost:8000/messages/unread" \
+       -H "Authorization: Bearer $USER_TOKEN"
+
+9.5) POST /messages/mark_read (yêu cầu token)
+   - Mô tả: Đánh dấu đã đọc. Có thể truyền conversation_id để reset unread theo phòng.
+   - Body (JSON, tùy chọn): { "from_user_id": "user456", "conversation_id": "<conv_id>" }
+   - Curl:
+     USER_TOKEN="<JWT_USER>"
+     curl -X POST http://localhost:8000/messages/mark_read \
+       -H "Authorization: Bearer $USER_TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{"conversation_id":"<conv_id>"}'
+
+Ghi chú (Chat nâng cao):
+- Hội thoại hoạt động như "phòng 1-1" giữa hai user; mỗi message thuộc 1 conversation.
+- Nếu đặt REDIS_URL, hệ thống hỗ trợ fanout đa thiết bị và presence (heartbeat 30s).
+- Trạng thái message: delivered/seen; server gửi ACK kèm conversation_id và client_message_id để đối chiếu ở client.
+
+10) PRESENCE API (Trạng thái online)
+
+10.1) GET /presence/{user_id}
+   - Mô tả: Trả về online status. Nếu cấu hình REDIS_URL, dùng key presence; nếu không, luôn trả online=false (có thể mở rộng).
+   - Curl:
+     curl -X GET http://localhost:8000/presence/user123
+
+
+11) PUSH NOTIFICATION
+
+11.1) Đăng ký device token
+   - POST /devices/register (yêu cầu token)
+   - Body: { "platform": "fcm", "token": "<fcm_registration_token>" }
+   - Curl:
+     USER_TOKEN="<JWT_USER>"
+     curl -X POST http://localhost:8000/devices/register \
+       -H "Authorization: Bearer $USER_TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{"platform":"fcm","token":"<FCM_TOKEN>"}'
+
+11.2) Cấu hình server
+   - Biến môi trường: FCM_SERVER_KEY=<server_key>
+   - Tuỳ chọn: REDIS_URL=redis://localhost:6379 để fanout đa thiết bị + presence
+
+11.3) Hành vi
+   - Khi người nhận offline (không có presence hợp lệ), server gửi push qua FCM với data {conversation_id, message_id, from}.
+
+
+9) CHAT API (Nhắn tin 1-1)
+
+9.1) WebSocket /messages/ws/chat/{user_id}
+   - Mô tả: Kết nối realtime cho user. Khi nhận JSON hợp lệ sẽ lưu DB và đẩy tới người nhận nếu online.
+   - URL WS: ws://localhost:8000/messages/ws/chat/{user_id}
+   - Payload JSON mẫu khi gửi qua WS:
+     {"from": "user123", "to": "user456", "content": "Hello!"}
+   - Gợi ý test nhanh bằng wscat:
+     wscat -c ws://localhost:8000/messages/ws/chat/user123
+     > {"from":"user123","to":"user456","content":"Hello!"}
+
+9.2) GET /messages/{friend_id} (yêu cầu token)
+   - Mô tả: Lấy lịch sử hội thoại giữa bạn và friend_id (mặc định sort theo thời gian tăng dần)
+   - Header: Authorization: Bearer <JWT_USER>
+   - Curl:
+     USER_TOKEN="<JWT_USER>"
+     FRIEND_ID="user456"
+     curl -X GET http://localhost:8000/messages/$FRIEND_ID \
+       -H "Authorization: Bearer $USER_TOKEN"
+
+9.3) GET /messages/unread (yêu cầu token)
+   - Mô tả: Lấy tin nhắn chưa đọc của bạn. Có thể lọc theo 1 người gửi qua query from_user_id.
+   - Ví dụ: /messages/unread?from_user_id=user456
+   - Header: Authorization: Bearer <JWT_USER>
+   - Curl:
+     USER_TOKEN="<JWT_USER>"
+     curl -X GET "http://localhost:8000/messages/unread" \
+       -H "Authorization: Bearer $USER_TOKEN"
+
+9.4) POST /messages/mark_read (yêu cầu token)
+   - Mô tả: Đánh dấu đã đọc tất cả tin chưa đọc gửi tới bạn. Tùy chọn chỉ đánh dấu theo 1 người gửi.
+   - Header: Authorization: Bearer <JWT_USER>
+   - Body (JSON, tùy chọn): { "from_user_id": "user456" }
+   - Curl:
+     USER_TOKEN="<JWT_USER>"
+     curl -X POST http://localhost:8000/messages/mark_read \
+       -H "Authorization: Bearer $USER_TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{"from_user_id":"user456"}'
+
+Ghi chú bổ sung (Chat):
+- WS không yêu cầu JWT theo mẫu cơ bản này. Nếu cần, có thể mở rộng để xác thực token khi bắt tay WebSocket.
+- Các bản ghi tin nhắn lưu ở collection "messages" với các field: sender_id, receiver_id, content, timestamp, seen.
