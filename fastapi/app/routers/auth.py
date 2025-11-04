@@ -3,9 +3,9 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from app.database.connection import mongo_db_dependency
 from app.repositories.user_repository import UserRepository
-from app.schemas.user import Token, UserCreate, UserPublic
+from app.schemas.user import Token, UserCreate, UserPublic, LoginResponse
 from app.services.user_service import UserService
-from app.utils.security import create_access_token
+from app.utils.security import create_access_token, JWT_EXPIRES_MINUTES
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -35,8 +35,8 @@ async def register_user(payload: UserCreate, user_service: UserService = Depends
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.post("/login", response_model=Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), user_service: UserService = Depends(get_user_service)) -> Token:
+@router.post("/login", response_model=LoginResponse)
+async def login(form_data: OAuth2PasswordRequestForm = Depends(), user_service: UserService = Depends(get_user_service)) -> LoginResponse:
     """
     Router: Nhận request đăng nhập
     -> Gọi Service để xác thực user
@@ -48,9 +48,20 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), user_service: 
     if not user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect email or password")
     
-    # Tạo access token
+    # Tạo access token + đóng gói thông tin user
     token = create_access_token(subject=user["_id"])
-    return Token(access_token=token)
+    user_public = UserPublic(
+        id=user["_id"],
+        email=user["email"],
+        full_name=user.get("full_name"),
+        role=user.get("role", "user"),
+    )
+    return LoginResponse(
+        access_token=token,
+        token_type="bearer",
+        expires_in=JWT_EXPIRES_MINUTES * 60,
+        user=user_public,
+    )
 
 
 

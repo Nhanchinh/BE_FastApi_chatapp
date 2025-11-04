@@ -30,13 +30,24 @@ Các API hiện có
            }'
 
 3) POST /auth/login
-   - Mô tả: Đăng nhập, nhận JWT access token (OAuth2 password flow).
+   - Mô tả: Đăng nhập, nhận JWT access token và thông tin user.
    - Body (form-urlencoded): username=<email>&password=<password>
    - Curl:
      curl -X POST http://localhost:8000/auth/login \
        -H "Content-Type: application/x-www-form-urlencoded" \
        -d "username=user@example.com&password=secret123"
-   - Phản hồi mẫu: { "access_token": "<JWT>", "token_type": "bearer" }
+   - Phản hồi mẫu:
+     {
+       "access_token": "<JWT>",
+       "token_type": "bearer",
+       "expires_in": 3600,
+       "user": {
+         "id": "64f0b1c2e3d45a6789abcd01",
+         "email": "user@example.com",
+         "full_name": "User Name",
+         "role": "user"
+       }
+     }
 
 4) POST /auth/seed-test-user
    - Mô tả: Tạo (hoặc lấy) test user nhanh.
@@ -127,7 +138,7 @@ Ghi chú
 9) CHAT API (Nhắn tin 1-1)
 
 9.1) WebSocket /messages/ws/chat/{user_id}
-   - Mô tả: Kết nối realtime cho user. Sử dụng JWT để xác thực WebSocket qua query `?token=<JWT>`.
+   - Mô tả: Kết nối realtime cho user. Bắt buộc JWT qua query `?token=<JWT>` để xác thực WebSocket.
    - URL WS: ws://localhost:8000/messages/ws/chat/{user_id}?token=<JWT>&resume_since=<ts_ms>
    - Gửi message (JSON): {"from":"user123","to":"user456","content":"Hello!","client_message_id":"<uuid>"}
    - Gửi typing: {"type":"typing_start","from":"user123","to":"user456"} (hoặc typing_stop)
@@ -210,8 +221,8 @@ Ghi chú (Chat nâng cao):
 9) CHAT API (Nhắn tin 1-1)
 
 9.1) WebSocket /messages/ws/chat/{user_id}
-   - Mô tả: Kết nối realtime cho user. Khi nhận JSON hợp lệ sẽ lưu DB và đẩy tới người nhận nếu online.
-   - URL WS: ws://localhost:8000/messages/ws/chat/{user_id}
+   - Mô tả: Kết nối realtime cho user. Khi nhận JSON hợp lệ sẽ lưu DB và đẩy tới người nhận nếu online. Bắt buộc JWT qua query `?token=<JWT>`.
+   - URL WS: ws://localhost:8000/messages/ws/chat/{user_id}?token=<JWT>
    - Payload JSON mẫu khi gửi qua WS:
      {"from": "user123", "to": "user456", "content": "Hello!"}
    - Gợi ý test nhanh bằng wscat:
@@ -248,5 +259,5 @@ Ghi chú (Chat nâng cao):
        -d '{"from_user_id":"user456"}'
 
 Ghi chú bổ sung (Chat):
-- WS không yêu cầu JWT theo mẫu cơ bản này. Nếu cần, có thể mở rộng để xác thực token khi bắt tay WebSocket.
-- Các bản ghi tin nhắn lưu ở collection "messages" với các field: sender_id, receiver_id, content, timestamp, seen.
+- WS yêu cầu JWT qua query `?token=<JWT>` và sẽ từ chối nếu token không hợp lệ hoặc không khớp `user_id`.
+- Các bản ghi tin nhắn lưu ở collection "messages" với các field: sender_id, receiver_id, content, timestamp, delivered, seen, client_message_id.
