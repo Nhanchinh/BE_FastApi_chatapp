@@ -2,7 +2,11 @@ chạy môi trường ảo
 source venv/Scripts/activate
 
 chạy dự án
+(local)
 uvicorn app.main:app --reload
+
+(public)
+uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 phần kế là phần liên quan đến các api:
 
