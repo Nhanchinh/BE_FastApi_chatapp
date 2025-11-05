@@ -47,4 +47,19 @@ class UserRepository:
         result = await self._collection.delete_one({"_id": ObjectId(user_id)})
         return result.deleted_count > 0
 
+    async def update_user_profile(self, user_id: str, updates: dict) -> bool:
+        """Cập nhật thông tin profile của user"""
+        # Chỉ cho phép update các trường an toàn
+        allowed_fields = ["full_name", "location", "hometown", "birth_year"]
+        filtered_updates = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+        
+        if not filtered_updates:
+            return False
+        
+        result = await self._collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": filtered_updates}
+        )
+        return result.modified_count > 0
+
 

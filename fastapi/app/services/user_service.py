@@ -107,3 +107,24 @@ class UserService:
         
         return await self.user_repository.delete_user(user_id)
 
+    async def update_user_profile(self, user_id: str, updates: dict) -> UserPublic:
+        """Cập nhật thông tin profile của user"""
+        success = await self.user_repository.update_user_profile(user_id, updates)
+        if not success:
+            raise ValueError("Failed to update profile")
+        
+        # Lấy user đã update
+        user = await self.user_repository.get_user_by_id(user_id)
+        if not user:
+            raise ValueError("User not found after update")
+        
+        return UserPublic(
+            id=user["_id"],
+            email=user["email"],
+            full_name=user.get("full_name"),
+            role=user.get("role", "user"),
+            location=user.get("location"),
+            hometown=user.get("hometown"),
+            birth_year=user.get("birth_year")
+        )
+

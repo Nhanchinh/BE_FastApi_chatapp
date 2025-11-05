@@ -29,6 +29,10 @@ class UserPublic(UserBase):
     id: str
     full_name: Optional[str] = None
     role: UserRole = "user"
+    friend_count: Optional[int] = None
+    location: Optional[str] = None
+    hometown: Optional[str] = None
+    birth_year: Optional[int] = None
 
 
 class Token(BaseModel):
@@ -41,6 +45,14 @@ class TokenPayload(BaseModel):
 
     sub: str
     exp: int
+
+
+class UserProfileUpdate(BaseModel):
+    """Schema để update profile user"""
+    full_name: Optional[str] = None
+    location: Optional[str] = None
+    hometown: Optional[str] = None
+    birth_year: Optional[int] = Field(None, ge=1900, le=2024)
 
 
 class LoginResponse(BaseModel):

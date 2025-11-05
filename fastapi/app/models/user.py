@@ -13,5 +13,8 @@ class UserDocument(TypedDict, total=False):
     role: UserRole
     friends: list[str]
     pending_requests: list[str]
+    location: Optional[str]  # Sống tại
+    hometown: Optional[str]  # Đến từ
+    birth_year: Optional[int]  # Năm sinh
 
 

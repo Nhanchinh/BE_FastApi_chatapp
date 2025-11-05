@@ -45,7 +45,11 @@ Các API hiện có
          "id": "64f0b1c2e3d45a6789abcd01",
          "email": "user@example.com",
          "full_name": "User Name",
-         "role": "user"
+         "role": "user",
+         "friend_count": 10,
+         "location": "Hà Nội",
+         "hometown": "Bắc Giang",
+         "birth_year": 2000
        }
      }
 
@@ -59,7 +63,42 @@ Các API hiện có
    - Curl:
      curl -X POST http://localhost:8000/auth/seed-admin
 
-6) GET /admin/users (Yêu cầu token admin)
+6) GET /auth/profile (Yêu cầu token)
+   - Mô tả: Lấy thông tin profile của user đang đăng nhập (bao gồm friend_count, location, hometown, birth_year).
+   - Header: Authorization: Bearer <JWT_USER>
+   - Curl:
+     USER_TOKEN="<JWT_USER>"
+     curl -X GET http://localhost:8000/auth/profile \
+       -H "Authorization: Bearer $USER_TOKEN"
+   - Phản hồi mẫu:
+     {
+       "id": "64f0b1c2e3d45a6789abcd01",
+       "email": "user@example.com",
+       "full_name": "User Name",
+       "role": "user",
+       "friend_count": 10,
+       "location": "Hà Nội",
+       "hometown": "Bắc Giang",
+       "birth_year": 2000
+     }
+
+7) PATCH /auth/profile (Yêu cầu token)
+   - Mô tả: Cập nhật thông tin cá nhân của user đang đăng nhập.
+   - Header: Authorization: Bearer <JWT_USER>
+   - Body (JSON): Các trường tùy chọn: full_name, location, hometown, birth_year
+   - Curl:
+     USER_TOKEN="<JWT_USER>"
+     curl -X PATCH http://localhost:8000/auth/profile \
+       -H "Authorization: Bearer $USER_TOKEN" \
+       -H "Content-Type: application/json" \
+       -d '{
+             "location": "Hà Nội",
+             "hometown": "Bắc Giang",
+             "birth_year": 2000
+           }'
+   - Phản hồi: Trả về UserPublic đã được cập nhật (giống GET /auth/profile)
+
+8) GET /admin/users (Yêu cầu token admin)
    - Mô tả: Lấy danh sách tất cả users.
    - Header: Authorization: Bearer <JWT_ADMIN>
    - Curl:
@@ -67,7 +106,7 @@ Các API hiện có
      curl -X GET http://localhost:8000/admin/users \
        -H "Authorization: Bearer $ADMIN_TOKEN"
 
-7) DELETE /admin/users/{user_id} (Yêu cầu token admin)
+9) DELETE /admin/users/{user_id} (Yêu cầu token admin)
    - Mô tả: Xóa user theo ID.
    - Header: Authorization: Bearer <JWT_ADMIN>
    - Curl:
@@ -76,9 +115,9 @@ Các API hiện có
      curl -X DELETE http://localhost:8000/admin/users/$USER_ID \
        -H "Authorization: Bearer $ADMIN_TOKEN"
 
-8) FRIENDSHIP API (Tính năng kết bạn)
+10) FRIENDSHIP API (Tính năng kết bạn)
 
-8.1) POST /friends/request/{target_user_id} (yêu cầu token)
+10.1) POST /friends/request/{target_user_id} (yêu cầu token)
     - Mô tả: Gửi lời mời kết bạn đến user khác
     - Header: Authorization: Bearer <JWT_USER>
     - Curl:
@@ -87,7 +126,7 @@ Các API hiện có
       curl -X POST http://localhost:8000/friends/request/$TARGET_ID \
         -H "Authorization: Bearer $USER_TOKEN"
 
-8.2) POST /friends/accept/{from_user_id} (yêu cầu token)
+10.2) POST /friends/accept/{from_user_id} (yêu cầu token)
     - Mô tả: Chấp nhận lời mời kết bạn từ một user
     - Header: Authorization: Bearer <JWT_USER>
     - Curl:
@@ -96,7 +135,7 @@ Các API hiện có
       curl -X POST http://localhost:8000/friends/accept/$FROM_ID \
         -H "Authorization: Bearer $USER_TOKEN"
 
-8.3) DELETE /friends/request/{user_id} (yêu cầu token)
+10.3) DELETE /friends/request/{user_id} (yêu cầu token)
     - Mô tả: Huỷ hoặc từ chối lời mời kết bạn giữa hai user (gửi hoặc nhận)
     - Header: Authorization: Bearer <JWT_USER>
     - Curl:
@@ -105,7 +144,7 @@ Các API hiện có
       curl -X DELETE http://localhost:8000/friends/request/$USER_ID \
         -H "Authorization: Bearer $USER_TOKEN"
 
-8.4) GET /friends/list (yêu cầu token)
+10.4) GET /friends/list (yêu cầu token)
     - Mô tả: Lấy danh sách bạn bè của bản thân
     - Header: Authorization: Bearer <JWT_USER>
     - Curl:
@@ -113,7 +152,7 @@ Các API hiện có
       curl -X GET http://localhost:8000/friends/list \
         -H "Authorization: Bearer $USER_TOKEN"
 
-8.5) GET /friends/requests (yêu cầu token)
+10.5) GET /friends/requests (yêu cầu token)
     - Mô tả: Lấy danh sách các lời mời kết bạn bạn đã nhận (trạng thái pending)
     - Header: Authorization: Bearer <JWT_USER>
     - Curl:
@@ -121,7 +160,7 @@ Các API hiện có
       curl -X GET http://localhost:8000/friends/requests \
         -H "Authorization: Bearer $USER_TOKEN"
 
-8.6) DELETE /friends/{friend_id} (yêu cầu token)
+10.6) DELETE /friends/{friend_id} (yêu cầu token)
     - Mô tả: Hủy kết bạn với một người (xóa khỏi danh sách bạn bè của nhau)
     - Header: Authorization: Bearer <JWT_USER>
     - Curl:
@@ -135,9 +174,9 @@ Ghi chú
 - Các API /admin/* yêu cầu JWT token của user có role admin qua header Authorization: Bearer <token>.
 
 
-9) CHAT API (Nhắn tin 1-1)
+11) CHAT API (Nhắn tin 1-1)
 
-9.1) WebSocket /messages/ws/chat/{user_id}
+11.1) WebSocket /messages/ws/chat/{user_id}
    - Mô tả: Kết nối realtime cho user. Bắt buộc JWT qua query `?token=<JWT>` để xác thực WebSocket.
    - URL WS: ws://localhost:8000/messages/ws/chat/{user_id}?token=<JWT>&resume_since=<ts_ms>
    - Gửi message (JSON): {"from":"user123","to":"user456","content":"Hello!","client_message_id":"<uuid>"}
@@ -150,7 +189,7 @@ Ghi chú
    - Khi nhận delivered/seen, server broadcast lại sự kiện tương ứng tới phía kia.
    - Reconnect/Resume: truyền query `resume_since` (millisecond epoch). Server sẽ gửi lại các message tới bạn sau thời điểm đó để bù trễ.
 
-9.2) GET /conversations (yêu cầu token)
+11.2) GET /conversations (yêu cầu token)
    - Mô tả: Lấy danh sách hội thoại (giống phòng chat 1-1). Cursor-based pagination.
    - Query: limit (<=100), cursor ("tsMs:objectId")
    - Curl:
@@ -159,7 +198,7 @@ Ghi chú
        -H "Authorization: Bearer $USER_TOKEN"
    - Phản hồi: { "items": [ {"_id","participants","last_message_at","last_message_preview","unread_counters"}... ], "next_cursor": "..." }
 
-9.3) GET /conversations/{id}/messages (yêu cầu token)
+11.3) GET /conversations/{id}/messages (yêu cầu token)
    - Mô tả: Lấy tin nhắn trong 1 hội thoại, phân trang bằng cursor.
    - Query: limit (<=200), cursor ("tsMs:objectId")
    - Curl:
@@ -168,14 +207,14 @@ Ghi chú
      curl -X GET "http://localhost:8000/conversations/$CONV_ID/messages?limit=50" \
        -H "Authorization: Bearer $USER_TOKEN"
 
-9.4) GET /messages/unread (yêu cầu token)
+11.4) GET /messages/unread (yêu cầu token)
    - Mô tả: Lấy tin chưa đọc. Có thể lọc theo 1 người gửi bằng from_user_id.
    - Curl:
      USER_TOKEN="<JWT_USER>"
      curl -X GET "http://localhost:8000/messages/unread" \
        -H "Authorization: Bearer $USER_TOKEN"
 
-9.5) POST /messages/mark_read (yêu cầu token)
+11.5) POST /messages/mark_read (yêu cầu token)
    - Mô tả: Đánh dấu đã đọc. Có thể truyền conversation_id để reset unread theo phòng.
    - Body (JSON, tùy chọn): { "from_user_id": "user456", "conversation_id": "<conv_id>" }
    - Curl:
@@ -190,17 +229,17 @@ Ghi chú (Chat nâng cao):
 - Nếu đặt REDIS_URL, hệ thống hỗ trợ fanout đa thiết bị và presence (heartbeat 30s).
 - Trạng thái message: delivered/seen; server gửi ACK kèm conversation_id và client_message_id để đối chiếu ở client.
 
-10) PRESENCE API (Trạng thái online)
+12) PRESENCE API (Trạng thái online)
 
-10.1) GET /presence/{user_id}
+12.1) GET /presence/{user_id}
    - Mô tả: Trả về online status. Nếu cấu hình REDIS_URL, dùng key presence; nếu không, luôn trả online=false (có thể mở rộng).
    - Curl:
      curl -X GET http://localhost:8000/presence/user123
 
 
-11) PUSH NOTIFICATION
+13) PUSH NOTIFICATION
 
-11.1) Đăng ký device token
+13.1) Đăng ký device token
    - POST /devices/register (yêu cầu token)
    - Body: { "platform": "fcm", "token": "<fcm_registration_token>" }
    - Curl:
@@ -210,11 +249,11 @@ Ghi chú (Chat nâng cao):
        -H "Content-Type: application/json" \
        -d '{"platform":"fcm","token":"<FCM_TOKEN>"}'
 
-11.2) Cấu hình server
+13.2) Cấu hình server
    - Biến môi trường: FCM_SERVER_KEY=<server_key>
    - Tuỳ chọn: REDIS_URL=redis://localhost:6379 để fanout đa thiết bị + presence
 
-11.3) Hành vi
+13.3) Hành vi
    - Khi người nhận offline (không có presence hợp lệ), server gửi push qua FCM với data {conversation_id, message_id, from}.
 
 

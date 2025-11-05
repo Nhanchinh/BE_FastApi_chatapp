@@ -3,7 +3,9 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from app.database.connection import mongo_db_dependency
 from app.repositories.user_repository import UserRepository
-from app.schemas.user import Token, UserCreate, UserPublic, LoginResponse
+from app.schemas.user import Token, UserCreate, UserPublic, LoginResponse, UserProfileUpdate
+from app.repositories.friend_repository import FriendRepository
+from app.utils.dependencies import get_current_user
 from app.services.user_service import UserService
 from app.utils.security import create_access_token, JWT_EXPIRES_MINUTES
 
@@ -36,7 +38,11 @@ async def register_user(payload: UserCreate, user_service: UserService = Depends
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), user_service: UserService = Depends(get_user_service)) -> LoginResponse:
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    user_service: UserService = Depends(get_user_service),
+    db = Depends(mongo_db_dependency)
+) -> LoginResponse:
     """
     Router: Nhận request đăng nhập
     -> Gọi Service để xác thực user
@@ -50,11 +56,23 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), user_service: 
     
     # Tạo access token + đóng gói thông tin user
     token = create_access_token(subject=user["_id"])
+    # Count friends (stored as array in users collection)
+    friend_repo = FriendRepository(db)
+    try:
+        friends = await friend_repo.list_friends(str(user["_id"]))
+        friend_count = len(friends)
+    except Exception:
+        friend_count = 0
+
     user_public = UserPublic(
         id=user["_id"],
         email=user["email"],
         full_name=user.get("full_name"),
         role=user.get("role", "user"),
+        friend_count=friend_count,
+        location=user.get("location"),
+        hometown=user.get("hometown"),
+        birth_year=user.get("birth_year")
     )
     return LoginResponse(
         access_token=token,
@@ -93,3 +111,62 @@ async def seed_admin_user(user_service: UserService = Depends(get_user_service))
         role="admin"
     )
     return user
+
+
+@router.get("/profile", response_model=UserPublic)
+async def get_my_profile(
+    current_user: dict = Depends(get_current_user),
+    db = Depends(mongo_db_dependency)
+) -> UserPublic:
+    """Lấy thông tin profile của user đang đăng nhập"""
+    friend_repo = FriendRepository(db)
+    try:
+        friends = await friend_repo.list_friends(str(current_user["_id"]))
+        friend_count = len(friends)
+    except Exception:
+        friend_count = 0
+    
+    return UserPublic(
+        id=current_user["_id"],
+        email=current_user["email"],
+        full_name=current_user.get("full_name"),
+        role=current_user.get("role", "user"),
+        location=current_user.get("location"),
+        hometown=current_user.get("hometown"),
+        birth_year=current_user.get("birth_year"),
+        friend_count=friend_count
+    )
+
+
+@router.patch("/profile", response_model=UserPublic)
+async def update_profile(
+    payload: UserProfileUpdate,
+    current_user: dict = Depends(get_current_user),
+    user_service: UserService = Depends(get_user_service),
+    db = Depends(mongo_db_dependency)
+) -> UserPublic:
+    """
+    Cập nhật thông tin cá nhân của user đang đăng nhập
+    - full_name: Họ và tên
+    - location: Sống tại
+    - hometown: Đến từ  
+    - birth_year: Năm sinh
+    """
+    try:
+        updates = payload.model_dump(exclude_unset=True)
+        user = await user_service.update_user_profile(
+            user_id=current_user["_id"],
+            updates=updates
+        )
+        
+        # Add friend count
+        friend_repo = FriendRepository(db)
+        try:
+            friends = await friend_repo.list_friends(str(current_user["_id"]))
+            user.friend_count = len(friends)
+        except Exception:
+            user.friend_count = 0
+        
+        return user
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
