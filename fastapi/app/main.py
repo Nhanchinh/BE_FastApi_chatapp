@@ -10,6 +10,7 @@ from app.routers.chat import router as chat_router
 from app.routers.conversations import router as conversations_router
 from app.routers.presence import router as presence_router
 from app.routers.devices import router as devices_router
+from app.routers.users import router as users_router
 
 
 @asynccontextmanager
@@ -32,6 +33,7 @@ app.include_router(chat_router)
 app.include_router(conversations_router)
 app.include_router(presence_router)
 app.include_router(devices_router)
+app.include_router(users_router)
 
 
 @app.get("/")

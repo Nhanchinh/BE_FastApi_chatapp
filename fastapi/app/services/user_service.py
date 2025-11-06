@@ -128,3 +128,24 @@ class UserService:
             birth_year=user.get("birth_year")
         )
 
+    async def search_users(self, query: str, limit: int = 20, exclude_user_id: str | None = None, prefix: bool = False) -> List[dict]:
+        """Search users by name and return public fields. Optionally exclude one user (current user).
+
+        If prefix=True, matches names starting with the query; otherwise, contains match.
+        """
+        raw = await self.user_repository.search_users_by_name(query=query, limit=limit, prefix=prefix)
+        results: List[dict] = []
+        for u in raw:
+            if exclude_user_id and u.get("_id") == exclude_user_id:
+                continue
+            results.append({
+                "id": u.get("_id"),
+                "email": u.get("email"),
+                "full_name": u.get("full_name"),
+                "role": u.get("role", "user"),
+                "location": u.get("location"),
+                "hometown": u.get("hometown"),
+                "birth_year": u.get("birth_year"),
+            })
+        return results
+

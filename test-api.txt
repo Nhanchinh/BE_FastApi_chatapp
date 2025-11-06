@@ -151,6 +151,31 @@ Các API hiện có
       USER_TOKEN="<JWT_USER>"
       curl -X GET http://localhost:8000/friends/list \
         -H "Authorization: Bearer $USER_TOKEN"
+    - Phản hồi mẫu:
+      {
+        "friends": [
+          {
+            "id": "64f0b1c2e3d45a6789abcd02",
+            "email": "friend1@example.com",
+            "full_name": "Friend One",
+            "role": "user",
+            "friend_count": 5,
+            "location": "Hà Nội",
+            "hometown": "Bắc Giang",
+            "birth_year": 1998
+          },
+          {
+            "id": "64f0b1c2e3d45a6789abcd03",
+            "email": "friend2@example.com",
+            "full_name": "Friend Two",
+            "role": "user",
+            "friend_count": 12,
+            "location": "Đà Nẵng",
+            "hometown": "Huế",
+            "birth_year": 1997
+          }
+        ]
+      }
 
 10.5) GET /friends/requests (yêu cầu token)
     - Mô tả: Lấy danh sách các lời mời kết bạn bạn đã nhận (trạng thái pending)
@@ -300,3 +325,40 @@ Ghi chú (Chat nâng cao):
 Ghi chú bổ sung (Chat):
 - WS yêu cầu JWT qua query `?token=<JWT>` và sẽ từ chối nếu token không hợp lệ hoặc không khớp `user_id`.
 - Các bản ghi tin nhắn lưu ở collection "messages" với các field: sender_id, receiver_id, content, timestamp, delivered, seen, client_message_id.
+ 
+14) USER SEARCH
+
+14.1) GET /users/search (yêu cầu token)
+  - Mô tả: Tìm kiếm người dùng theo tên (full_name, không phân biệt hoa thường). Mặc định loại trừ chính bạn.
+  - Query: q=<từ khóa>, limit (1..50, mặc định 20), prefix (true/false; nếu true thì chỉ lấy tên bắt đầu với q)
+  - Header: Authorization: Bearer <JWT_USER>
+  - Curl:
+    USER_TOKEN="<JWT_USER>"
+    curl -X GET "http://localhost:8000/users/search?q=Th%E2%BA%A5n%20Ch%C3%ADnh&limit=10" \
+      -H "Authorization: Bearer $USER_TOKEN"
+  - Ví dụ prefix-only:
+    curl -X GET "http://localhost:8000/users/search?q=Th%E2%BA%A5n&prefix=true" \
+      -H "Authorization: Bearer $USER_TOKEN"
+  - Phản hồi mẫu:
+    {
+      "items": [
+        {
+          "id": "64f0b1c2e3d45a6789abcd11",
+          "email": "chinh1@example.com",
+          "full_name": "Thân Chính",
+          "role": "user",
+          "location": "Hà Nội",
+          "hometown": "Bắc Giang",
+          "birth_year": 1998
+        },
+        {
+          "id": "64f0b1c2e3d45a6789abcd12",
+          "email": "chinh2@example.com",
+          "full_name": "Thân Chính Nguyễn",
+          "role": "user",
+          "location": null,
+          "hometown": null,
+          "birth_year": null
+        }
+      ]
+    }

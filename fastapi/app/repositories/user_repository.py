@@ -2,6 +2,7 @@ from typing import List, Optional
 
 from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pymongo import ASCENDING
 
 
 class UserRepository:
@@ -61,5 +62,27 @@ class UserRepository:
             {"$set": filtered_updates}
         )
         return result.modified_count > 0
+
+    async def get_users_by_ids(self, user_ids: List[str]) -> List[dict]:
+        if not user_ids:
+            return []
+        object_ids = [ObjectId(uid) for uid in user_ids]
+        users: List[dict] = []
+        async for user in self._collection.find({"_id": {"$in": object_ids}}):
+            user["_id"] = str(user["_id"])  # normalize for API layer
+            users.append(user)
+        return users
+
+    async def search_users_by_name(self, query: str, limit: int = 20, prefix: bool = False) -> List[dict]:
+        if not query:
+            return []
+        pattern = f"^{query}" if prefix else query
+        regex = {"$regex": pattern, "$options": "i"}
+        cursor = self._collection.find({"full_name": regex}).sort("full_name", ASCENDING).limit(int(limit))
+        users: List[dict] = []
+        async for user in cursor:
+            user["_id"] = str(user["_id"])  # normalize
+            users.append(user)
+        return users
 
 

@@ -59,3 +59,11 @@ class FriendRepository:
             {"_id": ObjectId(friend_id)}, {"$pull": {"friends": user_id}}
         )
         return (res1.modified_count + res2.modified_count) > 0
+
+    async def is_friend(self, user_id: str, friend_id: str) -> bool:
+        """Check whether friend_id is in user_id's friends list."""
+        doc = await self._user_collection.find_one({
+            "_id": ObjectId(user_id),
+            "friends": friend_id,
+        }, projection={"_id": 1})
+        return doc is not None

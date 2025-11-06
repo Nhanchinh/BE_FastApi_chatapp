@@ -56,3 +56,10 @@ async def unfriend(friend_id: str, current_user: dict = Depends(get_current_user
     if not ok:
         raise HTTPException(status_code=404, detail="Friend relation not found.")
     return {"msg": "Unfriended"}
+
+@router.get("/{friend_id}")
+async def get_friend_detail(friend_id: str, current_user: dict = Depends(get_current_user), service: FriendService = Depends(get_friend_service)):
+    friend = await service.get_friend_by_id(current_user["_id"], friend_id)
+    if not friend:
+        raise HTTPException(status_code=404, detail="Friend not found or not in your friend list.")
+    return friend

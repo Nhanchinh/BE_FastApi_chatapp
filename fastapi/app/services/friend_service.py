@@ -40,8 +40,32 @@ class FriendService:
             return False
         return await self.friend_repo.delete_friend_request(request["_id"])
 
-    async def get_friend_list(self, user_id: str) -> List[str]:
-        return await self.friend_repo.list_friends(user_id)
+    async def get_friend_list(self, user_id: str) -> List[dict]:
+        """Return detailed friend profiles instead of just friend ID strings.
+
+        Each item includes: id, email, full_name, role, friend_count, location,
+        hometown, birth_year.
+        """
+        friend_ids: List[str] = await self.friend_repo.list_friends(user_id)
+        if not friend_ids:
+            return []
+        friends = await self.user_repo.get_users_by_ids(friend_ids)
+        detailed: List[dict] = []
+        for f in friends:
+            detailed.append({
+                "id": f.get("_id"),
+                "email": f.get("email"),
+                "full_name": f.get("full_name"),
+                "role": f.get("role", "user"),
+                "friend_count": len(f.get("friends", [])) if isinstance(f.get("friends"), list) else None,
+                "location": f.get("location"),
+                "hometown": f.get("hometown"),
+                "birth_year": f.get("birth_year"),
+            })
+        # Optional: maintain original order by friend_ids
+        order_index = {fid: idx for idx, fid in enumerate(friend_ids)}
+        detailed.sort(key=lambda u: order_index.get(u.get("id"), 1_000_000))
+        return detailed
 
     async def get_received_requests(self, user_id: str):
         return await self.friend_repo.list_received_requests(user_id)
