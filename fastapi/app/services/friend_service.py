@@ -68,7 +68,38 @@ class FriendService:
         return detailed
 
     async def get_received_requests(self, user_id: str):
-        return await self.friend_repo.list_received_requests(user_id)
+        """Return pending requests enriched with requester profile details."""
+        requests = await self.friend_repo.list_received_requests(user_id)
+        if not requests:
+            return []
+        from_ids = [req.get("from_user") for req in requests if req.get("from_user")]
+        unique_from_ids = list({fid for fid in from_ids if isinstance(fid, str)})
+        users = await self.user_repo.get_users_by_ids(unique_from_ids)
+        by_id = {u.get("_id"): u for u in users}
+        enriched = []
+        for r in requests:
+            u = by_id.get(r.get("from_user"))
+            requester = None
+            if u:
+                requester = {
+                    "id": u.get("_id"),
+                    "email": u.get("email"),
+                    "full_name": u.get("full_name"),
+                    "role": u.get("role", "user"),
+                    "friend_count": len(u.get("friends", [])) if isinstance(u.get("friends"), list) else None,
+                    "location": u.get("location"),
+                    "hometown": u.get("hometown"),
+                    "birth_year": u.get("birth_year"),
+                }
+            enriched.append({
+                "id": r.get("id"),
+                "from_user": r.get("from_user"),
+                "to_user": r.get("to_user"),
+                "status": r.get("status"),
+                "created_at": r.get("created_at"),
+                "requester": requester,
+            })
+        return enriched
 
     async def unfriend(self, user_id: str, friend_id: str) -> bool:
         # đảm bảo cả hai user tồn tại
