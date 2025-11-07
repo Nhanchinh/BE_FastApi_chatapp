@@ -188,14 +188,93 @@ async def get_unread(from_user_id: Optional[str] = None, current_user: dict = De
 
 
 @router.post("/mark_read")
-async def mark_read(body: Dict[str, Any] | None = None, current_user: dict = Depends(get_current_user), service: ChatService = Depends(get_chat_service)):
+async def mark_read(body: Dict[str, Any] | None = None, current_user: dict = Depends(get_current_user), service: ChatService = Depends(get_chat_service), db = Depends(mongo_db_dependency)):
     from_user_id = None
     if body and isinstance(body, dict):
         from_user_id = body.get("from_user_id")
         conversation_id = body.get("conversation_id")
     else:
         conversation_id = None
+    
+    # Mark messages as read
     count = await service.mark_read(current_user["_id"], from_user_id, conversation_id)
+    
+    # If messages were marked as read, send "seen" events via WebSocket to senders
+    if count > 0:
+        bus = await get_bus()
+        msg_repo = MessageRepository(db)
+        
+        if conversation_id:
+            # For conversation-specific mark_read, find the sender (other participant)
+            try:
+                from bson import ObjectId
+                from app.repositories.conversation_repository import ConversationRepository
+                convo_repo = ConversationRepository(db)
+                convo_oid = ObjectId(conversation_id)
+                conversation = await convo_repo.collection.find_one({"_id": convo_oid})
+                
+                if conversation:
+                    participants = conversation.get("participants", [])
+                    # Find the sender (the other participant, not the current user)
+                    sender_id = None
+                    for p in participants:
+                        if p != current_user["_id"]:
+                            sender_id = p
+                            break
+                    
+                    if sender_id:
+                        # Get the most recent unread message from this sender in this conversation
+                        # to get a message_id for the seen event
+                        query = {
+                            "conversation_id": convo_oid,
+                            "sender_id": sender_id,
+                            "receiver_id": current_user["_id"],
+                            "seen": True  # Now it's seen
+                        }
+                        recent_msg = await msg_repo.collection.find_one(query, sort=[("timestamp", -1)])
+                        
+                        if recent_msg:
+                            payload = json.dumps({
+                                "type": "seen",
+                                "message_id": str(recent_msg["_id"]),
+                                "conversation_id": conversation_id,
+                                "from": current_user["_id"]
+                            })
+                            
+                            if getattr(bus, "enabled", False):
+                                await (await get_bus()).publish(f"user:{sender_id}", payload)
+                            else:
+                                await manager.send_personal_message(sender_id, payload)
+            except Exception as e:
+                # If error, just continue without sending seen event
+                pass
+        elif from_user_id:
+            # For user-specific mark_read, send seen event to that user
+            try:
+                # Get the most recent message from this user
+                query = {
+                    "sender_id": from_user_id,
+                    "receiver_id": current_user["_id"],
+                    "seen": True
+                }
+                recent_msg = await msg_repo.collection.find_one(query, sort=[("timestamp", -1)])
+                
+                if recent_msg:
+                    conv_id = str(recent_msg.get("conversation_id", ""))
+                    payload = json.dumps({
+                        "type": "seen",
+                        "message_id": str(recent_msg["_id"]),
+                        "conversation_id": conv_id,
+                        "from": current_user["_id"]
+                    })
+                    
+                    if getattr(bus, "enabled", False):
+                        await (await get_bus()).publish(f"user:{from_user_id}", payload)
+                    else:
+                        await manager.send_personal_message(from_user_id, payload)
+            except Exception:
+                pass
+    
     return {"updated": count}
 
 
