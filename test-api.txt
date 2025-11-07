@@ -238,28 +238,84 @@ Ghi chú
 
 11.2) GET /conversations (yêu cầu token)
    - Mô tả: Lấy danh sách hội thoại (giống phòng chat 1-1). Cursor-based pagination.
-   - Query: limit (<=100), cursor ("tsMs:objectId")
+   - Query: limit (1-100, mặc định 20), cursor (optional, format: "tsMs:objectId")
    - Curl:
      USER_TOKEN="<JWT_USER>"
      curl -X GET "http://localhost:8000/conversations?limit=20" \
        -H "Authorization: Bearer $USER_TOKEN"
-   - Phản hồi: { "items": [ {"_id","participants","last_message_at","last_message_preview","unread_counters"}... ], "next_cursor": "..." }
+     # Với cursor để phân trang
+     curl -X GET "http://localhost:8000/conversations?limit=20&cursor=1705312200000:507f1f77bcf86cd799439011" \
+       -H "Authorization: Bearer $USER_TOKEN"
+   - Phản hồi mẫu:
+     {
+       "items": [
+         {
+           "_id": "conversation_id",
+           "participants": ["user1", "user2"],
+           "last_message_at": "2025-01-15T10:30:00Z",
+           "last_message_preview": "Hello!",
+           "unread_counters": {"user1": 5, "user2": 0}
+         }
+       ],
+       "next_cursor": "1705312200000:507f1f77bcf86cd799439011"  // null nếu hết
+     }
 
-11.3) GET /conversations/{id}/messages (yêu cầu token)
-   - Mô tả: Lấy tin nhắn trong 1 hội thoại, phân trang bằng cursor.
-   - Query: limit (<=200), cursor ("tsMs:objectId")
+11.3) GET /conversations/{conversation_id}/messages (yêu cầu token)
+   - Mô tả: Lấy tin nhắn trong 1 hội thoại, phân trang bằng cursor. Messages được sắp xếp theo thời gian tăng dần (cũ nhất trước).
+   - Query: limit (1-200, mặc định 50), cursor (optional, format: "tsMs:objectId")
    - Curl:
      USER_TOKEN="<JWT_USER>"
      CONV_ID="<conversation_id>"
      curl -X GET "http://localhost:8000/conversations/$CONV_ID/messages?limit=50" \
        -H "Authorization: Bearer $USER_TOKEN"
+     # Với cursor để phân trang
+     curl -X GET "http://localhost:8000/conversations/$CONV_ID/messages?limit=50&cursor=1705312200000:507f1f77bcf86cd799439011" \
+       -H "Authorization: Bearer $USER_TOKEN"
+   - Phản hồi mẫu:
+     {
+       "items": [
+         {
+           "_id": "message_id",
+           "sender_id": "user123",
+           "receiver_id": "user456",
+           "content": "Hello!",
+           "timestamp": "2025-01-15T10:30:00Z",
+           "conversation_id": "conversation_id",
+           "delivered": true,
+           "seen": false,
+           "client_message_id": "uuid-optional"
+         }
+       ],
+       "next_cursor": "1705312200000:507f1f77bcf86cd799439011"  // null nếu hết
+     }
 
 11.4) GET /messages/unread (yêu cầu token)
-   - Mô tả: Lấy tin chưa đọc. Có thể lọc theo 1 người gửi bằng from_user_id.
+   - Mô tả: Lấy tin chưa đọc. Có thể lọc theo 1 người gửi bằng query parameter from_user_id.
+   - Query: from_user_id (optional) - lọc theo người gửi
    - Curl:
      USER_TOKEN="<JWT_USER>"
+     # Lấy tất cả tin chưa đọc
      curl -X GET "http://localhost:8000/messages/unread" \
        -H "Authorization: Bearer $USER_TOKEN"
+     # Lọc theo người gửi
+     curl -X GET "http://localhost:8000/messages/unread?from_user_id=user456" \
+       -H "Authorization: Bearer $USER_TOKEN"
+   - Phản hồi mẫu:
+     {
+       "messages": [
+         {
+           "_id": "message_id",
+           "sender_id": "user123",
+           "receiver_id": "user456",
+           "content": "Hello!",
+           "timestamp": "2025-01-15T10:30:00Z",
+           "conversation_id": "conversation_id",
+           "delivered": false,
+           "seen": false,
+           "client_message_id": "uuid-optional"
+         }
+       ]
+     }
 
 11.5) POST /messages/mark_read (yêu cầu token)
    - Mô tả: Đánh dấu đã đọc. Có thể truyền conversation_id để reset unread theo phòng.
@@ -275,6 +331,8 @@ Ghi chú (Chat nâng cao):
 - Hội thoại hoạt động như "phòng 1-1" giữa hai user; mỗi message thuộc 1 conversation.
 - Nếu đặt REDIS_URL, hệ thống hỗ trợ fanout đa thiết bị và presence (heartbeat 30s).
 - Trạng thái message: delivered/seen; server gửi ACK kèm conversation_id và client_message_id để đối chiếu ở client.
+- Timestamp trong response là datetime ISO format hoặc milliseconds tùy context.
+- GET /messages/{friend_id} đã deprecated, nên dùng GET /conversations và GET /conversations/{id}/messages.
 
 12) PRESENCE API (Trạng thái online)
 
@@ -304,50 +362,6 @@ Ghi chú (Chat nâng cao):
    - Khi người nhận offline (không có presence hợp lệ), server gửi push qua FCM với data {conversation_id, message_id, from}.
 
 
-9) CHAT API (Nhắn tin 1-1)
-
-9.1) WebSocket /messages/ws/chat/{user_id}
-   - Mô tả: Kết nối realtime cho user. Khi nhận JSON hợp lệ sẽ lưu DB và đẩy tới người nhận nếu online. Bắt buộc JWT qua query `?token=<JWT>`.
-   - URL WS: ws://localhost:8000/messages/ws/chat/{user_id}?token=<JWT>
-   - Payload JSON mẫu khi gửi qua WS:
-     {"from": "user123", "to": "user456", "content": "Hello!"}
-   - Gợi ý test nhanh bằng wscat:
-     wscat -c ws://localhost:8000/messages/ws/chat/user123
-     > {"from":"user123","to":"user456","content":"Hello!"}
-
-9.2) GET /messages/{friend_id} (yêu cầu token)
-   - Mô tả: Lấy lịch sử hội thoại giữa bạn và friend_id (mặc định sort theo thời gian tăng dần)
-   - Header: Authorization: Bearer <JWT_USER>
-   - Curl:
-     USER_TOKEN="<JWT_USER>"
-     FRIEND_ID="user456"
-     curl -X GET http://localhost:8000/messages/$FRIEND_ID \
-       -H "Authorization: Bearer $USER_TOKEN"
-
-9.3) GET /messages/unread (yêu cầu token)
-   - Mô tả: Lấy tin nhắn chưa đọc của bạn. Có thể lọc theo 1 người gửi qua query from_user_id.
-   - Ví dụ: /messages/unread?from_user_id=user456
-   - Header: Authorization: Bearer <JWT_USER>
-   - Curl:
-     USER_TOKEN="<JWT_USER>"
-     curl -X GET "http://localhost:8000/messages/unread" \
-       -H "Authorization: Bearer $USER_TOKEN"
-
-9.4) POST /messages/mark_read (yêu cầu token)
-   - Mô tả: Đánh dấu đã đọc tất cả tin chưa đọc gửi tới bạn. Tùy chọn chỉ đánh dấu theo 1 người gửi.
-   - Header: Authorization: Bearer <JWT_USER>
-   - Body (JSON, tùy chọn): { "from_user_id": "user456" }
-   - Curl:
-     USER_TOKEN="<JWT_USER>"
-     curl -X POST http://localhost:8000/messages/mark_read \
-       -H "Authorization: Bearer $USER_TOKEN" \
-       -H "Content-Type: application/json" \
-       -d '{"from_user_id":"user456"}'
-
-Ghi chú bổ sung (Chat):
-- WS yêu cầu JWT qua query `?token=<JWT>` và sẽ từ chối nếu token không hợp lệ hoặc không khớp `user_id`.
-- Các bản ghi tin nhắn lưu ở collection "messages" với các field: sender_id, receiver_id, content, timestamp, delivered, seen, client_message_id.
- 
 14) USER SEARCH
 
 14.1) GET /users/search (yêu cầu token)

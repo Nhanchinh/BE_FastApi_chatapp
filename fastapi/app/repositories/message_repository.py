@@ -5,6 +5,18 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 
+def convert_objectid_to_str(obj: Any) -> Any:
+    """Recursively convert all ObjectId instances to strings in a dict/list structure."""
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    elif isinstance(obj, dict):
+        return {k: convert_objectid_to_str(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_objectid_to_str(item) for item in obj]
+    else:
+        return obj
+
+
 class MessageRepository:
 
     def __init__(self, db: AsyncIOMotorDatabase) -> None:
@@ -33,8 +45,12 @@ class MessageRepository:
             "client_message_id": client_message_id,
         }
         result = await self.collection.insert_one(doc)
-        doc["_id"] = str(result.inserted_id)
-        return doc
+        # Build API-facing dict with string ids
+        api_doc = dict(doc)
+        api_doc["_id"] = str(result.inserted_id)
+        # Recursively convert all ObjectId to string
+        api_doc = convert_objectid_to_str(api_doc)
+        return api_doc
 
     async def get_messages_by_conversation(
         self,
@@ -58,8 +74,8 @@ class MessageRepository:
                 pass
         cur = self.collection.find(query).sort(sort).limit(limit)
         items = await cur.to_list(length=limit)
-        for it in items:
-            it["_id"] = str(it.get("_id"))
+        # Recursively convert all ObjectId to string in each item
+        items = [convert_objectid_to_str(item) for item in items]
         next_cursor = None
         if items:
             last = items[-1]
@@ -74,16 +90,16 @@ class MessageRepository:
             query["sender_id"] = from_user_id
         cursor = self.collection.find(query).sort("timestamp", 1)
         items = await cursor.to_list(length=1000)
-        for it in items:
-            it["_id"] = str(it.get("_id"))
+        # Recursively convert all ObjectId to string in each item
+        items = [convert_objectid_to_str(item) for item in items]
         return items
 
     async def get_for_receiver_since(self, user_id: str, since_ts_ms: int) -> List[Dict[str, Any]]:
         since = datetime.fromtimestamp(since_ts_ms / 1000.0, tz=timezone.utc)
         cursor = self.collection.find({"receiver_id": user_id, "timestamp": {"$gt": since}}).sort("timestamp", 1)
         items = await cursor.to_list(length=1000)
-        for it in items:
-            it["_id"] = str(it.get("_id"))
+        # Recursively convert all ObjectId to string in each item
+        items = [convert_objectid_to_str(item) for item in items]
         return items
 
     async def mark_read(self, receiver_id: str, from_user_id: Optional[str] = None, conversation_id: Optional[str] = None) -> int:
@@ -91,13 +107,21 @@ class MessageRepository:
         if from_user_id:
             query["sender_id"] = from_user_id
         if conversation_id:
-            query["conversation_id"] = conversation_id
+            try:
+                conv_oid = ObjectId(conversation_id)
+            except Exception:
+                conv_oid = conversation_id  # type: ignore[assignment]
+            query["conversation_id"] = conv_oid  # match stored type
         result = await self.collection.update_many(query, {"$set": {"seen": True}})
         return result.modified_count or 0
 
     async def mark_delivered_for_receiver(self, conversation_id, receiver_id: str) -> int:
+        try:
+            conv_oid = ObjectId(conversation_id)
+        except Exception:
+            conv_oid = conversation_id  # type: ignore[assignment]
         result = await self.collection.update_many(
-            {"conversation_id": conversation_id, "receiver_id": receiver_id, "delivered": False},
+            {"conversation_id": conv_oid, "receiver_id": receiver_id, "delivered": False},
             {"$set": {"delivered": True}},
         )
         return result.modified_count or 0
