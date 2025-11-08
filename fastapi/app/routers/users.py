@@ -19,3 +19,32 @@ async def search_users(q: str = Query(..., min_length=1), limit: int = Query(20,
     return {"items": results}
 
 
+@router.get("/{user_id}")
+async def get_user_by_id(user_id: str, current_user: dict = Depends(get_current_user), service: UserService = Depends(get_user_service), db = Depends(mongo_db_dependency)):
+    """Get public user information by user ID. Requires authentication but can access any user's public info."""
+    user_repo = UserRepository(db)
+    user = await user_repo.get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Return public information only
+    from app.repositories.friend_repository import FriendRepository
+    friend_repo = FriendRepository(db)
+    try:
+        friends = await friend_repo.list_friends(user_id)
+        friend_count = len(friends)
+    except Exception:
+        friend_count = 0
+    
+    return {
+        "id": user.get("_id"),
+        "email": user.get("email"),
+        "full_name": user.get("full_name"),
+        "role": user.get("role", "user"),
+        "friend_count": friend_count,
+        "location": user.get("location"),
+        "hometown": user.get("hometown"),
+        "birth_year": user.get("birth_year"),
+    }
+
+
