@@ -78,4 +78,10 @@ class ChatService:
         tokens = await device_repo.get_tokens(receiver_id, platform="fcm")
         await push.send_fcm([t["token"] for t in tokens], title, body, data)
 
+    async def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
+        """
+        Xóa cuộc trò chuyện cho user hiện tại.
+        """
+        return await self._conversation_repo.delete_conversation(conversation_id, user_id)
+
 
