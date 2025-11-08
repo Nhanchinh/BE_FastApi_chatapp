@@ -13,13 +13,30 @@ def get_friend_service(db = Depends(mongo_db_dependency)):
     return FriendService(friend_repo, user_repo)
 
 @router.post("/request/{target_user_id}")
-async def send_friend_request(target_user_id: str, current_user: dict = Depends(get_current_user), service: FriendService = Depends(get_friend_service)):
+async def send_friend_request(target_user_id: str, current_user: dict = Depends(get_current_user), service: FriendService = Depends(get_friend_service), db = Depends(mongo_db_dependency)):
     requester_id = current_user["_id"]
     if requester_id == target_user_id:
         raise HTTPException(status_code=400, detail="Cannot befriend yourself.")
+    
+    # Check if already friends - use friend_repo directly
+    friend_repo = FriendRepository(db)
+    if await friend_repo.is_friend(requester_id, target_user_id):
+        raise HTTPException(status_code=400, detail="Already friends.")
+    
     ok = await service.send_friend_request(requester_id, target_user_id)
     if not ok:
-        raise HTTPException(status_code=400, detail="Friend request already sent.")
+        # Check if there's a pending request from us
+        request = await friend_repo.get_friend_request(requester_id, target_user_id)
+        if request and request.get("status") == "pending":
+            raise HTTPException(status_code=400, detail="Friend request already sent.")
+        
+        # Check if reverse request exists (other person sent to us)
+        reverse_request = await friend_repo.get_friend_request(target_user_id, requester_id)
+        if reverse_request and reverse_request.get("status") == "pending":
+            raise HTTPException(status_code=400, detail="Friend request already received from this user. Please accept it instead.")
+        
+        # This shouldn't happen, but just in case
+        raise HTTPException(status_code=400, detail="Unable to send friend request.")
     return {"msg": "Request sent"}
 
 @router.post("/accept/{from_user_id}")

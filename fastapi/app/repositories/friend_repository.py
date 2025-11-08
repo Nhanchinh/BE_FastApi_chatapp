@@ -58,6 +58,16 @@ class FriendRepository:
         res2 = await self._user_collection.update_one(
             {"_id": ObjectId(friend_id)}, {"$pull": {"friends": user_id}}
         )
+        
+        # Also delete any existing friend requests between these two users (both directions)
+        # This allows them to send friend requests again after unfriending
+        await self._collection.delete_many({
+            "$or": [
+                {"from_user": user_id, "to_user": friend_id},
+                {"from_user": friend_id, "to_user": user_id}
+            ]
+        })
+        
         return (res1.modified_count + res2.modified_count) > 0
 
     async def is_friend(self, user_id: str, friend_id: str) -> bool:

@@ -10,9 +10,27 @@ class FriendService:
         self.user_repo = user_repo
 
     async def send_friend_request(self, from_user: str, to_user: str):
+        # Check if they are already friends
+        if await self.friend_repo.is_friend(from_user, to_user):
+            return False  # Đã là bạn rồi
+        
+        # Check if request already exists with status "pending"
         request = await self.friend_repo.get_friend_request(from_user, to_user)
+        if request and request.get("status") == "pending":
+            return False  # đã gửi rồi và đang pending
+        
+        # Check if reverse request exists with status "pending" (other person sent to us)
+        reverse_request = await self.friend_repo.get_friend_request(to_user, from_user)
+        if reverse_request and reverse_request.get("status") == "pending":
+            return False  # Người kia đã gửi request rồi, nên accept thay vì gửi mới
+        
+        # If there's an old request with status "accepted" or other status, delete it first
+        # This handles the case where users unfriended and want to be friends again
         if request:
-            return False  # đã gửi rồi
+            await self.friend_repo.delete_friend_request(request["_id"])
+        if reverse_request:
+            await self.friend_repo.delete_friend_request(reverse_request["_id"])
+        
         return await self.friend_repo.create_friend_request(from_user, to_user)
 
     async def accept_friend_request(self, from_user: str, to_user: str):
