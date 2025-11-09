@@ -161,14 +161,24 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
     except WebSocketDisconnect:
         manager.disconnect(user_id, websocket)
         
-        # Update last_seen when user disconnects (only if no other connections)
-        if user_id not in manager.active_connections or not manager.active_connections[user_id]:
+        # Check if user has no more active connections
+        has_other_connections = user_id in manager.active_connections and len(manager.active_connections[user_id]) > 0
+        
+        if not has_other_connections:
+            # User has no more connections, mark as offline
             try:
                 from app.repositories.user_repository import UserRepository
                 user_repo = UserRepository(db)
                 await user_repo.update_last_seen(user_id)
             except Exception:
                 pass  # Ignore errors when updating last_seen
+            
+            # Clear presence key in Redis immediately
+            if getattr(bus, "enabled", False):
+                try:
+                    await bus.clear_presence(user_id)
+                except Exception:
+                    pass
         
         if sub_task:
             sub = await get_bus()

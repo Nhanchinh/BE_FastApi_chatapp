@@ -22,6 +22,16 @@ def get_chat_service(db = Depends(mongo_db_dependency)) -> ChatService:
 async def list_conversations(limit: int = Query(20, ge=1, le=100), cursor: Optional[str] = None, current_user: dict = Depends(get_current_user), service: ChatService = Depends(get_chat_service), db = Depends(mongo_db_dependency)):
     items, next_cursor = await service.list_conversations(current_user["_id"], limit=limit, cursor=cursor)
     
+    # Convert datetime objects to ISO format strings
+    from datetime import datetime, timezone
+    for item in items:
+        if "last_message_at" in item and isinstance(item["last_message_at"], datetime):
+            dt = item["last_message_at"]
+            # Đảm bảo datetime có timezone (UTC)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            item["last_message_at"] = dt.isoformat()
+    
     # Add presence data (online status) to conversations
     if items:
         from app.utils.realtime_bus import get_bus
@@ -65,6 +75,17 @@ async def list_conversations(limit: int = Query(20, ge=1, le=100), cursor: Optio
 @router.get("/{conversation_id}/messages")
 async def list_messages(conversation_id: str, limit: int = Query(50, ge=1, le=200), cursor: Optional[str] = None, current_user: dict = Depends(get_current_user), service: ChatService = Depends(get_chat_service)):
     messages, next_cursor = await service.get_history(conversation_id, limit=limit, cursor=cursor)
+    
+    # Convert datetime objects to ISO format strings
+    from datetime import datetime, timezone
+    for message in messages:
+        if "timestamp" in message and isinstance(message["timestamp"], datetime):
+            dt = message["timestamp"]
+            # Đảm bảo datetime có timezone (UTC)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            message["timestamp"] = dt.isoformat()
+    
     return {"items": messages, "next_cursor": next_cursor}
 
 

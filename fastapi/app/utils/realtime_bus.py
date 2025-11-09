@@ -80,6 +80,14 @@ async def get_bus():
             key = f"presence:{user_id}"
             await self._redis.set(key, "online", ex=ttl_seconds)
 
+        async def clear_presence(self, user_id: str) -> None:
+            """Xóa presence key khi user offline/logout"""
+            key = f"presence:{user_id}"
+            try:
+                await self._redis.delete(key)
+            except Exception:
+                pass
+
     _bus = RedisBus(url)
     return _bus
 
