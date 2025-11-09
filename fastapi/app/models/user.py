@@ -16,5 +16,6 @@ class UserDocument(TypedDict, total=False):
     location: Optional[str]  # Sống tại
     hometown: Optional[str]  # Đến từ
     birth_year: Optional[int]  # Năm sinh
+    last_seen: Optional[str]  # ISO format timestamp when user was last seen
 
 

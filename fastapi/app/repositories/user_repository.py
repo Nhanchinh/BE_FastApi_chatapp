@@ -85,4 +85,16 @@ class UserRepository:
             users.append(user)
         return users
 
+    async def update_last_seen(self, user_id: str) -> bool:
+        """Cập nhật last_seen timestamp khi user offline"""
+        from datetime import datetime, timezone
+        try:
+            result = await self._collection.update_one(
+                {"_id": ObjectId(user_id)},
+                {"$set": {"last_seen": datetime.now(timezone.utc).isoformat()}}
+            )
+            return result.modified_count > 0
+        except Exception:
+            return False
+
 

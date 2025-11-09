@@ -19,8 +19,46 @@ def get_chat_service(db = Depends(mongo_db_dependency)) -> ChatService:
 
 
 @router.get("")
-async def list_conversations(limit: int = Query(20, ge=1, le=100), cursor: Optional[str] = None, current_user: dict = Depends(get_current_user), service: ChatService = Depends(get_chat_service)):
+async def list_conversations(limit: int = Query(20, ge=1, le=100), cursor: Optional[str] = None, current_user: dict = Depends(get_current_user), service: ChatService = Depends(get_chat_service), db = Depends(mongo_db_dependency)):
     items, next_cursor = await service.list_conversations(current_user["_id"], limit=limit, cursor=cursor)
+    
+    # Add presence data (online status) to conversations
+    if items:
+        from app.utils.realtime_bus import get_bus
+        bus = await get_bus()
+        current_user_id = current_user["_id"]
+        
+        # Get online status for other participants in each conversation
+        if getattr(bus, "enabled", False):
+            try:
+                import redis.asyncio as redis  # type: ignore
+                r = bus._redis  # type: ignore
+                for item in items:
+                    participants = item.get("participants", [])
+                    # Find the other participant (not current user)
+                    other_participant = None
+                    for p in participants:
+                        if p != current_user_id:
+                            other_participant = p
+                            break
+                    
+                    if other_participant:
+                        try:
+                            ttl = await r.ttl(f"presence:{other_participant}")
+                            item["is_online"] = ttl and ttl > 0
+                        except Exception:
+                            item["is_online"] = False
+                    else:
+                        item["is_online"] = False
+            except Exception:
+                # If Redis fails, set all to False
+                for item in items:
+                    item["is_online"] = False
+        else:
+            # No Redis, set all to False
+            for item in items:
+                item["is_online"] = False
+    
     return {"items": items, "next_cursor": next_cursor}
 
 

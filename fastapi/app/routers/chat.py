@@ -45,6 +45,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
     bus = await get_bus()
     # Start Redis subscription (if enabled) to fanout messages to this connection
     sub_task = None
+    heartbeat_task = None
     if getattr(bus, "enabled", False):
         subscriber = await bus.subscribe(f"user:{user_id}", lambda m: websocket.send_text(m))
         sub_task = asyncio.create_task(subscriber.run())
@@ -159,6 +160,16 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                 pass
     except WebSocketDisconnect:
         manager.disconnect(user_id, websocket)
+        
+        # Update last_seen when user disconnects (only if no other connections)
+        if user_id not in manager.active_connections or not manager.active_connections[user_id]:
+            try:
+                from app.repositories.user_repository import UserRepository
+                user_repo = UserRepository(db)
+                await user_repo.update_last_seen(user_id)
+            except Exception:
+                pass  # Ignore errors when updating last_seen
+        
         if sub_task:
             sub = await get_bus()
             try:
@@ -171,6 +182,12 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                 pass
             try:
                 sub_task.cancel()
+            except Exception:
+                pass
+        # Cancel heartbeat task if it exists
+        if heartbeat_task:
+            try:
+                heartbeat_task.cancel()
             except Exception:
                 pass
 

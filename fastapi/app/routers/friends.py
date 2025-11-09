@@ -56,8 +56,44 @@ async def cancel_friend_request(user_id: str, current_user: dict = Depends(get_c
     return {"msg": "Request cancelled"}
 
 @router.get("/list")
-async def friend_list(current_user: dict = Depends(get_current_user), service: FriendService = Depends(get_friend_service)):
+async def friend_list(current_user: dict = Depends(get_current_user), service: FriendService = Depends(get_friend_service), db = Depends(mongo_db_dependency)):
     friends = await service.get_friend_list(current_user["_id"])
+    
+    # Add presence data (online status and last_seen) to friends
+    if friends:
+        from app.utils.realtime_bus import get_bus
+        from app.repositories.user_repository import UserRepository
+        
+        bus = await get_bus()
+        user_repo = UserRepository(db)
+        friend_ids = [f.get("id") for f in friends if f.get("id")]
+        
+        # Get online status from Redis
+        online_statuses = {}
+        if getattr(bus, "enabled", False):
+            try:
+                import redis.asyncio as redis  # type: ignore
+                r = bus._redis  # type: ignore
+                for friend_id in friend_ids:
+                    try:
+                        ttl = await r.ttl(f"presence:{friend_id}")
+                        online_statuses[friend_id] = ttl and ttl > 0
+                    except Exception:
+                        online_statuses[friend_id] = False
+            except Exception:
+                pass
+        
+        # Get last_seen from MongoDB
+        users = await user_repo.get_users_by_ids(friend_ids)
+        user_last_seen = {user["_id"]: user.get("last_seen") for user in users if user.get("last_seen")}
+        
+        # Add presence data to friends
+        for friend in friends:
+            friend_id = friend.get("id")
+            if friend_id:
+                friend["is_online"] = online_statuses.get(friend_id, False)
+                friend["last_seen"] = user_last_seen.get(friend_id)
+    
     return {"friends": friends}
 
 @router.get("/requests")
