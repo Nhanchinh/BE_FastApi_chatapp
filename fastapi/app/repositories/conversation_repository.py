@@ -83,9 +83,9 @@ class ConversationRepository:
         from bson import ObjectId
         return ObjectId(oid_hex)
 
-    async def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
+    async def delete_conversation(self, conversation_id: str, user_id: str, message_repo=None) -> bool:
         """
-        Xóa cuộc trò chuyện. Chỉ xóa nếu user là participant.
+        Xóa cuộc trò chuyện và tất cả messages liên quan. Chỉ xóa nếu user là participant.
         """
         from bson import ObjectId
         oid = ObjectId(conversation_id) if isinstance(conversation_id, str) else conversation_id
@@ -98,6 +98,13 @@ class ConversationRepository:
         # Kiểm tra user có phải là participant không
         if user_id not in conversation.get("participants", []):
             return False
+        
+        # Xóa tất cả messages trong conversation trước
+        if message_repo:
+            try:
+                await message_repo.collection.delete_many({"conversation_id": oid})
+            except Exception:
+                pass  # Ignore errors khi xóa messages
         
         # Xóa conversation
         result = await self.collection.delete_one({"_id": oid})

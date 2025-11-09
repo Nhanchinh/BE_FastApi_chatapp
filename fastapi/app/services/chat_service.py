@@ -80,8 +80,8 @@ class ChatService:
 
     async def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
         """
-        Xóa cuộc trò chuyện cho user hiện tại.
+        Xóa cuộc trò chuyện và tất cả messages liên quan cho user hiện tại.
         """
-        return await self._conversation_repo.delete_conversation(conversation_id, user_id)
+        return await self._conversation_repo.delete_conversation(conversation_id, user_id, self._message_repo)
 
 
