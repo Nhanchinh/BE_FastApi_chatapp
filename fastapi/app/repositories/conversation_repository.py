@@ -34,13 +34,14 @@ class ConversationRepository:
         doc["_id"] = str(result.inserted_id)
         return doc
 
-    async def update_on_new_message(self, conversation_id, preview: str, receiver_id: str) -> None:
+    async def update_on_new_message(self, conversation_id, preview: str, receiver_id: str, sender_id: str) -> None:
         await self.collection.update_one(
             {"_id": conversation_id},
             {
                 "$set": {
                     "last_message_at": datetime.now(timezone.utc),
                     "last_message_preview": preview,
+                    "last_message_sender_id": sender_id,  # Lưu sender_id của last message
                 },
                 "$inc": {f"unread_counters.{receiver_id}": 1},
             },

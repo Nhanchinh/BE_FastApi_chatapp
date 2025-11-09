@@ -27,7 +27,7 @@ class ChatService:
             client_message_id=client_message_id,
         )
         preview = content.strip()[:200]
-        await self._conversation_repo.update_on_new_message(convo_oid, preview, receiver_id)
+        await self._conversation_repo.update_on_new_message(convo_oid, preview, receiver_id, sender_id)
         return {"ack": {"message_id": saved["_id"], "conversation_id": str(convo_oid), "client_message_id": client_message_id}}
 
     async def get_history(self, conversation_id: str, limit: int = 50, cursor: str | None = None):
