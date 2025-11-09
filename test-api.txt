@@ -8,6 +8,12 @@ uvicorn app.main:app --reload
 (public)
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 
+
+
+WARNING! :  nếu chưa cài docker và redis thì app sẽ k chạy đc (do redis hộ trợ main db )
+--> cài docker sau đó chạy lệnh ở thư mục như dòng dưới (tùy theo folder chứa)
+D:\ATBM\BE> docker run -d --name redis-chatapp -p 6379:6379 redis
+
 phần kế là phần liên quan đến các api:
 
 
