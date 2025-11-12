@@ -1,13 +1,29 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.database.connection import mongo_db_dependency
 from app.repositories.user_repository import UserRepository
-from app.schemas.user import Token, UserCreate, UserPublic, LoginResponse, UserProfileUpdate
+from app.repositories.refresh_token_repository import RefreshTokenRepository
+from app.schemas.user import (
+    UserCreate,
+    UserPublic,
+    LoginResponse,
+    UserProfileUpdate,
+    RefreshTokenRequest,
+    RefreshTokenResponse,
+)
 from app.repositories.friend_repository import FriendRepository
 from app.utils.dependencies import get_current_user
 from app.services.user_service import UserService
-from app.utils.security import create_access_token, JWT_EXPIRES_MINUTES
+from app.utils.security import (
+    create_access_token,
+    create_refresh_token,
+    parse_refresh_token,
+    verify_password,
+    JWT_EXPIRES_MINUTES,
+)
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -54,8 +70,18 @@ async def login(
     if not user:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect email or password")
     
-    # Tạo access token + đóng gói thông tin user
+    # Tạo access token + refresh token
     token = create_access_token(subject=user["_id"])
+    refresh_repo = RefreshTokenRepository(db)
+    refresh_token, token_id, hashed_secret, refresh_expires_at = create_refresh_token()
+    await refresh_repo.create_refresh_token(
+        user_id=user["_id"],
+        token_id=token_id,
+        hashed_secret=hashed_secret,
+        expires_at=refresh_expires_at,
+    )
+    refresh_expires_in = int((refresh_expires_at - datetime.now(timezone.utc)).total_seconds())
+
     # Count friends (stored as array in users collection)
     friend_repo = FriendRepository(db)
     try:
@@ -78,6 +104,8 @@ async def login(
         access_token=token,
         token_type="bearer",
         expires_in=JWT_EXPIRES_MINUTES * 60,
+        refresh_token=refresh_token,
+        refresh_expires_in=refresh_expires_in,
         user=user_public,
     )
 
@@ -170,3 +198,73 @@ async def update_profile(
         return user
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/refresh", response_model=RefreshTokenResponse)
+async def refresh_tokens(
+    payload: RefreshTokenRequest,
+    db = Depends(mongo_db_dependency)
+) -> RefreshTokenResponse:
+    """
+    Đổi refresh token hợp lệ lấy access token mới (token rotation).
+    """
+    refresh_repo = RefreshTokenRepository(db)
+    try:
+        token_id, secret = parse_refresh_token(payload.refresh_token)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
+    stored = await refresh_repo.get_active_token(token_id)
+    if not stored:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
+    if stored.get("expires_at") <= datetime.now(timezone.utc):
+        await refresh_repo.revoke_token(token_id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token expired",
+        )
+
+    if not verify_password(secret, stored.get("hashed_secret", "")):
+        await refresh_repo.revoke_token(token_id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+        )
+
+    user_repo = UserRepository(db)
+    user = await user_repo.get_user_by_id(stored["user_id"])
+    if not user:
+        await refresh_repo.revoke_token(token_id)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+        )
+
+    # Rotate token: revoke old, issue new one
+    await refresh_repo.revoke_token(token_id)
+    new_refresh_token, new_token_id, new_hashed_secret, refresh_expires_at = create_refresh_token()
+    await refresh_repo.create_refresh_token(
+        user_id=stored["user_id"],
+        token_id=new_token_id,
+        hashed_secret=new_hashed_secret,
+        expires_at=refresh_expires_at,
+    )
+
+    access_token = create_access_token(subject=stored["user_id"])
+    expires_in = JWT_EXPIRES_MINUTES * 60
+    refresh_expires_in = int((refresh_expires_at - datetime.now(timezone.utc)).total_seconds())
+
+    return RefreshTokenResponse(
+        access_token=access_token,
+        token_type="bearer",
+        expires_in=expires_in,
+        refresh_token=new_refresh_token,
+        refresh_expires_in=refresh_expires_in,
+    )

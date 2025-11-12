@@ -74,6 +74,7 @@ DB_NAME=chatapp_db
 JWT_SECRET_KEY=your-secret-key-change-this
 JWT_ALGORITHM=HS256
 JWT_EXPIRES_MINUTES=60
+REFRESH_TOKEN_EXPIRES_DAYS=7
 
 # Redis (Optional - cho online status)
 REDIS_URL=redis://localhost:6379
