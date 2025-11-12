@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.database.connection import close_mongo_connection, connect_to_mongo, get_database
 from app.routers.admin import router as admin_router
@@ -11,6 +14,7 @@ from app.routers.conversations import router as conversations_router
 from app.routers.presence import router as presence_router
 from app.routers.devices import router as devices_router
 from app.routers.users import router as users_router
+from app.utils.rate_limiter import limiter
 
 
 @asynccontextmanager
@@ -24,6 +28,17 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="FastAPI Auth with MongoDB", lifespan=lifespan)
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+
+    return JSONResponse(
+        status_code=429,
+        content={"detail": "Too Many Requests. Please try again later."}
+    )
 
 
 app.include_router(auth_router)

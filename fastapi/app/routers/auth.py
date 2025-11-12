@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from app.database.connection import mongo_db_dependency
@@ -17,6 +17,7 @@ from app.schemas.user import (
 from app.repositories.friend_repository import FriendRepository
 from app.utils.dependencies import get_current_user
 from app.services.user_service import UserService
+from app.utils.rate_limiter import limit_per_minute
 from app.utils.security import (
     create_access_token,
     create_refresh_token,
@@ -37,7 +38,12 @@ async def get_user_service(db = Depends(mongo_db_dependency)) -> UserService:
 
 
 @router.post("/register", response_model=UserPublic, status_code=status.HTTP_201_CREATED)
-async def register_user(payload: UserCreate, user_service: UserService = Depends(get_user_service)) -> UserPublic:
+@limit_per_minute("3/minute")
+async def register_user(
+    request: Request,
+    payload: UserCreate,
+    user_service: UserService = Depends(get_user_service),
+) -> UserPublic:
     """
     Router: Nhận request đăng ký
     -> Gọi Service để xử lý logic
@@ -54,7 +60,9 @@ async def register_user(payload: UserCreate, user_service: UserService = Depends
 
 
 @router.post("/login", response_model=LoginResponse)
+@limit_per_minute("5/minute")
 async def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     user_service: UserService = Depends(get_user_service),
     db = Depends(mongo_db_dependency)
@@ -201,7 +209,9 @@ async def update_profile(
 
 
 @router.post("/refresh", response_model=RefreshTokenResponse)
+@limit_per_minute("60/minute")
 async def refresh_tokens(
+    request: Request,
     payload: RefreshTokenRequest,
     db = Depends(mongo_db_dependency)
 ) -> RefreshTokenResponse:
