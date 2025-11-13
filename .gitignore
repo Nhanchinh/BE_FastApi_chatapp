@@ -43,3 +43,9 @@ dist/
 *.db
 *.sqlite3
 logs/
+# SSL Certificates (PRIVATE - NEVER COMMIT)
+*.pem
+*.crt
+*.key
+*.pfx
+*.p12
