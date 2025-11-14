@@ -11,7 +11,7 @@ class UserService:
     def __init__(self, user_repository: UserRepository):
         self.user_repository = user_repository
 
-    async def register_user(self, email: str, password: str, full_name: Optional[str], role: str = "user") -> UserPublic:
+    async def register_user(self, email: str, password: str, full_name: Optional[str], role: str = "user", public_key: Optional[str] = None) -> UserPublic:
         """
         Đăng ký user mới
         - Validate email đã tồn tại chưa
@@ -31,10 +31,11 @@ class UserService:
             email=email,
             hashed_password=hashed_password,
             full_name=full_name,
-            role=role
+            role=role,
+            public_key=public_key
         )
 
-        return UserPublic(id=new_id, email=email, full_name=full_name, role=role)
+        return UserPublic(id=new_id, email=email, full_name=full_name, role=role, public_key=public_key)
 
     async def authenticate_user(self, email: str, password: str) -> dict:
         """
@@ -125,7 +126,8 @@ class UserService:
             role=user.get("role", "user"),
             location=user.get("location"),
             hometown=user.get("hometown"),
-            birth_year=user.get("birth_year")
+            birth_year=user.get("birth_year"),
+            public_key=user.get("public_key")
         )
 
     async def search_users(self, query: str, limit: int = 20, exclude_user_id: str | None = None, prefix: bool = False) -> List[dict]:
@@ -146,6 +148,7 @@ class UserService:
                 "location": u.get("location"),
                 "hometown": u.get("hometown"),
                 "birth_year": u.get("birth_year"),
+                "public_key": u.get("public_key"),
             })
         return results
 

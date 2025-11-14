@@ -10,7 +10,7 @@ class UserRepository:
     def __init__(self, db: AsyncIOMotorDatabase) -> None:
         self._collection = db.get_collection("users")
 
-    async def create_user(self, email: str, hashed_password: str, full_name: Optional[str], role: str = "user") -> str:
+    async def create_user(self, email: str, hashed_password: str, full_name: Optional[str], role: str = "user", public_key: Optional[str] = None) -> str:
 
         doc = {
             "email": email,
@@ -18,6 +18,8 @@ class UserRepository:
             "full_name": full_name,
             "role": role
         }
+        if public_key:
+            doc["public_key"] = public_key
         result = await self._collection.insert_one(doc)
         return str(result.inserted_id)
 
@@ -51,7 +53,7 @@ class UserRepository:
     async def update_user_profile(self, user_id: str, updates: dict) -> bool:
         """Cập nhật thông tin profile của user"""
         # Chỉ cho phép update các trường an toàn
-        allowed_fields = ["full_name", "location", "hometown", "birth_year"]
+        allowed_fields = ["full_name", "location", "hometown", "birth_year", "public_key"]
         filtered_updates = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
         
         if not filtered_updates:

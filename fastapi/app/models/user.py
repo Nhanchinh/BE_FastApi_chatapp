@@ -17,5 +17,6 @@ class UserDocument(TypedDict, total=False):
     hometown: Optional[str]  # Đến từ
     birth_year: Optional[int]  # Năm sinh
     last_seen: Optional[str]  # ISO format timestamp when user was last seen
+    public_key: Optional[str]  # RSA public key (Base64 encoded PEM format) for E2EE
 
 

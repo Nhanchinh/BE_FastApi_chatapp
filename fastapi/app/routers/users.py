@@ -19,6 +19,35 @@ async def search_users(q: str = Query(..., min_length=1), limit: int = Query(20,
     return {"items": results}
 
 
+@router.get("/public-keys/batch")
+async def get_public_keys_batch(user_ids: str = Query(..., description="Comma-separated user IDs"), current_user: dict = Depends(get_current_user), db = Depends(mongo_db_dependency)):
+    """
+    Fetch public keys for multiple users at once.
+    Query param: user_ids (comma-separated, e.g., "id1,id2,id3")
+    Returns: {"items": [{"user_id": "...", "public_key": "..."}, ...]}
+    """
+    user_repo = UserRepository(db)
+    ids_list = [uid.strip() for uid in user_ids.split(",") if uid.strip()]
+    
+    if not ids_list:
+        raise HTTPException(status_code=400, detail="No user IDs provided")
+    
+    if len(ids_list) > 50:
+        raise HTTPException(status_code=400, detail="Maximum 50 user IDs allowed per request")
+    
+    users = await user_repo.get_users_by_ids(ids_list)
+    
+    results = []
+    for user in users:
+        results.append({
+            "user_id": user.get("_id"),
+            "public_key": user.get("public_key"),
+            "full_name": user.get("full_name")  # Include name for reference
+        })
+    
+    return {"items": results}
+
+
 @router.get("/{user_id}")
 async def get_user_by_id(user_id: str, current_user: dict = Depends(get_current_user), service: UserService = Depends(get_user_service), db = Depends(mongo_db_dependency)):
     """Get public user information by user ID. Requires authentication but can access any user's public info."""
@@ -45,6 +74,7 @@ async def get_user_by_id(user_id: str, current_user: dict = Depends(get_current_
         "location": user.get("location"),
         "hometown": user.get("hometown"),
         "birth_year": user.get("birth_year"),
+        "public_key": user.get("public_key"),
     }
 
 

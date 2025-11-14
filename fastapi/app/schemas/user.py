@@ -15,6 +15,7 @@ class UserCreate(UserBase):
 
     password: str = Field(min_length=6)
     full_name: Optional[str] = None
+    public_key: Optional[str] = None  # RSA public key for E2EE
 
 
 class UserInDB(UserBase):
@@ -33,6 +34,7 @@ class UserPublic(UserBase):
     location: Optional[str] = None
     hometown: Optional[str] = None
     birth_year: Optional[int] = None
+    public_key: Optional[str] = None  # RSA public key for E2EE
 
 
 class Token(BaseModel):
@@ -53,6 +55,7 @@ class UserProfileUpdate(BaseModel):
     location: Optional[str] = None
     hometown: Optional[str] = None
     birth_year: Optional[int] = Field(None, ge=1900, le=2024)
+    public_key: Optional[str] = None  # Allow updating public key
 
 
 class LoginResponse(BaseModel):

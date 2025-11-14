@@ -72,6 +72,8 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                         "from": m["sender_id"],
                         "content": m["content"],
                         "ack": {"message_id": m["_id"], "conversation_id": str(m["conversation_id"])},
+                        "iv": m.get("iv"),
+                        "is_encrypted": m.get("is_encrypted", False),
                     }))
             except Exception:
                 pass
@@ -127,7 +129,17 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
             if not all(k in msg for k in ("from", "to", "content")):
                 await websocket.send_text("Invalid message payload")
                 continue
-            ack = await service.send_message(msg["from"], msg["to"], msg["content"], msg.get("client_message_id")) 
+            # Support E2EE: extract iv and is_encrypted if present
+            iv = msg.get("iv")
+            is_encrypted = msg.get("is_encrypted", False)
+            ack = await service.send_message(
+                msg["from"], 
+                msg["to"], 
+                msg["content"], 
+                msg.get("client_message_id"),
+                iv=iv,
+                is_encrypted=is_encrypted
+            ) 
             # gửi ack về cho sender
             await websocket.send_text(json.dumps(ack))
             # đẩy message realtime tới receiver
@@ -136,6 +148,8 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                 "from": msg["from"],
                 "content": msg["content"],
                 "ack": ack["ack"],
+                "iv": iv,
+                "is_encrypted": is_encrypted,
             })
             if getattr(bus, "enabled", False):
                 await (await get_bus()).publish(f"user:{msg['to']}", payload)

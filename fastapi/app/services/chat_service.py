@@ -14,7 +14,7 @@ class ChatService:
         self._message_repo = message_repo
         self._conversation_repo = conversation_repo
 
-    async def send_message(self, sender_id: str, receiver_id: str, content: str, client_message_id: str | None = None) -> Dict[str, Any]:
+    async def send_message(self, sender_id: str, receiver_id: str, content: str, client_message_id: str | None = None, iv: str | None = None, is_encrypted: bool = False) -> Dict[str, Any]:
         if not content or not content.strip():
             raise ValueError("Message content cannot be empty")
         convo = await self._conversation_repo.get_or_create_one_to_one(sender_id, receiver_id)
@@ -25,8 +25,11 @@ class ChatService:
             receiver_id=receiver_id,
             content=content.strip(),
             client_message_id=client_message_id,
+            iv=iv,
+            is_encrypted=is_encrypted,
         )
-        preview = content.strip()[:200]
+        # For encrypted messages, show encrypted indicator in preview
+        preview = "[Encrypted Message]" if is_encrypted else content.strip()[:200]
         await self._conversation_repo.update_on_new_message(convo_oid, preview, receiver_id, sender_id)
         return {"ack": {"message_id": saved["_id"], "conversation_id": str(convo_oid), "client_message_id": client_message_id}}
 

@@ -52,7 +52,8 @@ async def register_user(
         user = await user_service.register_user(
             email=payload.email,
             password=payload.password,
-            full_name=payload.full_name
+            full_name=payload.full_name,
+            public_key=payload.public_key
         )
         return user
     except ValueError as e:
@@ -106,7 +107,8 @@ async def login(
         friend_count=friend_count,
         location=user.get("location"),
         hometown=user.get("hometown"),
-        birth_year=user.get("birth_year")
+        birth_year=user.get("birth_year"),
+        public_key=user.get("public_key")
     )
     return LoginResponse(
         access_token=token,
@@ -170,7 +172,8 @@ async def get_my_profile(
         location=current_user.get("location"),
         hometown=current_user.get("hometown"),
         birth_year=current_user.get("birth_year"),
-        friend_count=friend_count
+        friend_count=friend_count,
+        public_key=current_user.get("public_key")
     )
 
 

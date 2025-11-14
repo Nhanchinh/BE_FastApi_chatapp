@@ -33,6 +33,8 @@ class MessageRepository:
         receiver_id: str,
         content: str,
         client_message_id: Optional[str] = None,
+        iv: Optional[str] = None,
+        is_encrypted: bool = False,
     ) -> Dict[str, Any]:
         doc: Dict[str, Any] = {
             "conversation_id": conversation_id,
@@ -44,6 +46,11 @@ class MessageRepository:
             "seen": False,
             "client_message_id": client_message_id,
         }
+        # Add E2EE fields if present
+        if iv:
+            doc["iv"] = iv
+        if is_encrypted:
+            doc["is_encrypted"] = is_encrypted
         result = await self.collection.insert_one(doc)
         # Build API-facing dict with string ids
         api_doc = dict(doc)
