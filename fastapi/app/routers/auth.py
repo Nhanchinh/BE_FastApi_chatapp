@@ -237,7 +237,12 @@ async def refresh_tokens(
             detail="Invalid refresh token",
         )
 
-    if stored.get("expires_at") <= datetime.now(timezone.utc):
+    # MongoDB stores datetime as naive, convert to aware for comparison
+    expires_at = stored.get("expires_at")
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    
+    if expires_at <= datetime.now(timezone.utc):
         await refresh_repo.revoke_token(token_id)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
