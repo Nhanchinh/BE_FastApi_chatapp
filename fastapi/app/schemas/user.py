@@ -66,6 +66,7 @@ class LoginResponse(BaseModel):
     refresh_token: str
     refresh_expires_in: int
     user: UserPublic
+    requires_public_key: bool = False
 
 
 class RefreshTokenRequest(BaseModel):

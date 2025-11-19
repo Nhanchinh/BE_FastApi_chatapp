@@ -110,6 +110,7 @@ async def login(
         birth_year=user.get("birth_year"),
         public_key=user.get("public_key")
     )
+    requires_public_key = not bool(user.get("public_key"))
     return LoginResponse(
         access_token=token,
         token_type="bearer",
@@ -117,6 +118,7 @@ async def login(
         refresh_token=refresh_token,
         refresh_expires_in=refresh_expires_in,
         user=user_public,
+        requires_public_key=requires_public_key,
     )
 
 

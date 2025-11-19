@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from bson import ObjectId
 from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.message_repository import MessageRepository
+from app.repositories.conversation_key_repository import ConversationKeyRepository
 from app.repositories.device_repository import DeviceRepository
 from app.utils.notifications import get_push
 from app.utils.realtime_bus import get_bus
@@ -86,5 +87,50 @@ class ChatService:
         Xóa cuộc trò chuyện và tất cả messages liên quan cho user hiện tại.
         """
         return await self._conversation_repo.delete_conversation(conversation_id, user_id, self._message_repo)
+
+    async def create_conversation_with_keys(
+        self,
+        current_user_id: str,
+        participant_id: str,
+        key_repo: ConversationKeyRepository,
+        encrypted_keys: List[Dict[str, str]]
+    ) -> Dict[str, Any]:
+        """
+        Tạo conversation mới và lưu encrypted keys đồng bộ.
+        Đảm bảo cả conversation và keys đều được lưu thành công trước khi trả về.
+        
+        Args:
+            current_user_id: ID của user hiện tại (người tạo conversation)
+            participant_id: ID của người tham gia
+            key_repo: Repository để lưu keys
+            encrypted_keys: List of {user_id, encrypted_session_key}
+        
+        Returns:
+            Dict với conversation_id và thông tin conversation
+        """
+        # Tạo conversation
+        convo = await self._conversation_repo.get_or_create_one_to_one(current_user_id, participant_id)
+        conversation_id = str(convo["_id"])
+        
+        # Lưu encrypted keys cho tất cả participants
+        stored_count = 0
+        for key_data in encrypted_keys:
+            user_id = key_data.get("user_id")
+            encrypted_key = key_data.get("encrypted_session_key")
+            
+            if not user_id or not encrypted_key:
+                continue
+            
+            await key_repo.store_key(conversation_id, user_id, encrypted_key)
+            stored_count += 1
+        
+        if stored_count == 0:
+            raise ValueError("No valid keys provided")
+        
+        return {
+            "conversation_id": conversation_id,
+            "participants": convo.get("participants", []),
+            "created_at": convo.get("last_message_at")
+        }
 
 
