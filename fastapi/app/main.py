@@ -15,6 +15,7 @@ from app.routers.presence import router as presence_router
 from app.routers.devices import router as devices_router
 from app.routers.users import router as users_router
 from app.routers.conversation_keys import router as conversation_keys_router
+from app.routers.media import router as media_router
 from app.utils.rate_limiter import limiter
 
 
@@ -51,6 +52,7 @@ app.include_router(presence_router)
 app.include_router(devices_router)
 app.include_router(users_router)
 app.include_router(conversation_keys_router)
+app.include_router(media_router)
 
 
 @app.get("/")

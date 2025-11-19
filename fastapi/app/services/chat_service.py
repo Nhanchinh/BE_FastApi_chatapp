@@ -15,8 +15,19 @@ class ChatService:
         self._message_repo = message_repo
         self._conversation_repo = conversation_repo
 
-    async def send_message(self, sender_id: str, receiver_id: str, content: str, client_message_id: str | None = None, iv: str | None = None, is_encrypted: bool = False) -> Dict[str, Any]:
-        if not content or not content.strip():
+    async def send_message(
+        self,
+        sender_id: str,
+        receiver_id: str,
+        content: str,
+        client_message_id: str | None = None,
+        iv: str | None = None,
+        is_encrypted: bool = False,
+        media_id: str | None = None,
+        media_mime_type: str | None = None,
+        media_size: int | None = None,
+    ) -> Dict[str, Any]:
+        if (not content or not content.strip()) and not media_id:
             raise ValueError("Message content cannot be empty")
         convo = await self._conversation_repo.get_or_create_one_to_one(sender_id, receiver_id)
         convo_oid = ObjectId(convo["_id"]) if isinstance(convo["_id"], str) else convo["_id"]
@@ -28,9 +39,17 @@ class ChatService:
             client_message_id=client_message_id,
             iv=iv,
             is_encrypted=is_encrypted,
+            media_id=media_id,
+            media_mime_type=media_mime_type,
+            media_size=media_size,
         )
         # For encrypted messages, show encrypted indicator in preview
-        preview = "[Encrypted Message]" if is_encrypted else content.strip()[:200]
+        if media_id:
+            preview = "[Media]"
+        elif is_encrypted:
+            preview = "[Encrypted Message]"
+        else:
+            preview = content.strip()[:200]
         await self._conversation_repo.update_on_new_message(convo_oid, preview, receiver_id, sender_id)
         return {"ack": {"message_id": saved["_id"], "conversation_id": str(convo_oid), "client_message_id": client_message_id}}
 

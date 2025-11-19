@@ -35,6 +35,9 @@ class MessageRepository:
         client_message_id: Optional[str] = None,
         iv: Optional[str] = None,
         is_encrypted: bool = False,
+        media_id: Optional[str] = None,
+        media_mime_type: Optional[str] = None,
+        media_size: Optional[int] = None,
     ) -> Dict[str, Any]:
         doc: Dict[str, Any] = {
             "conversation_id": conversation_id,
@@ -51,6 +54,12 @@ class MessageRepository:
             doc["iv"] = iv
         if is_encrypted:
             doc["is_encrypted"] = is_encrypted
+        if media_id:
+            doc["media_id"] = media_id
+        if media_mime_type:
+            doc["media_mime_type"] = media_mime_type
+        if media_size is not None:
+            doc["media_size"] = media_size
         result = await self.collection.insert_one(doc)
         # Build API-facing dict with string ids
         api_doc = dict(doc)

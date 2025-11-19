@@ -67,13 +67,22 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                 # fetch missed messages to this user since timestamp
                 msgs = await service._message_repo.get_for_receiver_since(user_id, since_ms)  # type: ignore
                 for m in msgs:
+                    ack_payload = {
+                        "message_id": m["_id"],
+                        "conversation_id": str(m["conversation_id"]),
+                    }
+                    if m.get("client_message_id"):
+                        ack_payload["client_message_id"] = m.get("client_message_id")
                     await websocket.send_text(json.dumps({
                         "type": "message",
                         "from": m["sender_id"],
                         "content": m["content"],
-                        "ack": {"message_id": m["_id"], "conversation_id": str(m["conversation_id"])},
+                        "ack": ack_payload,
                         "iv": m.get("iv"),
                         "is_encrypted": m.get("is_encrypted", False),
+                        "media_id": m.get("media_id"),
+                        "media_mime_type": m.get("media_mime_type"),
+                        "media_size": m.get("media_size"),
                     }))
             except Exception:
                 pass
@@ -129,17 +138,29 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
             if not all(k in msg for k in ("from", "to", "content")):
                 await websocket.send_text("Invalid message payload")
                 continue
-            # Support E2EE: extract iv and is_encrypted if present
+            # Support E2EE & media: extract extra fields if present
             iv = msg.get("iv")
             is_encrypted = msg.get("is_encrypted", False)
+            media_id = msg.get("media_id")
+            media_mime_type = msg.get("media_mime_type")
+            media_size = msg.get("media_size")
             ack = await service.send_message(
                 msg["from"], 
                 msg["to"], 
                 msg["content"], 
                 msg.get("client_message_id"),
                 iv=iv,
-                is_encrypted=is_encrypted
+                is_encrypted=is_encrypted,
+                media_id=media_id,
+                media_mime_type=media_mime_type,
+                media_size=media_size,
             ) 
+            if media_id:
+                ack["ack"]["media_id"] = media_id
+                if media_mime_type:
+                    ack["ack"]["media_mime_type"] = media_mime_type
+                if media_size is not None:
+                    ack["ack"]["media_size"] = media_size
             # gửi ack về cho sender
             await websocket.send_text(json.dumps(ack))
             # đẩy message realtime tới receiver
@@ -150,6 +171,9 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                 "ack": ack["ack"],
                 "iv": iv,
                 "is_encrypted": is_encrypted,
+                "media_id": media_id,
+                "media_mime_type": media_mime_type,
+                "media_size": media_size,
             })
             if getattr(bus, "enabled", False):
                 await (await get_bus()).publish(f"user:{msg['to']}", payload)
@@ -167,7 +191,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                         db,
                         receiver_id=msg["to"],
                         title="New message",
-                        body=msg["content"][:100],
+                        body=(msg["content"][:100] if msg.get("content") else "[Media]"),
                         data={"conversation_id": ack["ack"]["conversation_id"], "message_id": ack["ack"]["message_id"], "from": msg["from"]},
                     )
             except Exception:

@@ -49,3 +49,5 @@ logs/
 *.key
 *.pfx
 *.p12
+#upload 
+media_uploads

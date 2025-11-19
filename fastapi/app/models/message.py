@@ -16,5 +16,9 @@ class MessageDocument(TypedDict, total=False):
     # E2EE fields
     iv: Optional[str]  # Initialization Vector for AES-GCM (Base64)
     is_encrypted: Optional[bool]  # Flag to indicate if message is encrypted
+    # Media fields
+    media_id: Optional[str]
+    media_mime_type: Optional[str]
+    media_size: Optional[int]
 
 
