@@ -1,3 +1,4 @@
+import re
 from typing import List, Optional
 
 from bson import ObjectId
@@ -9,6 +10,10 @@ class UserRepository:
 
     def __init__(self, db: AsyncIOMotorDatabase) -> None:
         self._collection = db.get_collection("users")
+
+    @property
+    def collection(self):
+        return self._collection
 
     async def create_user(self, email: str, hashed_password: str, full_name: Optional[str], role: str = "user", public_key: Optional[str] = None) -> str:
 
@@ -28,6 +33,13 @@ class UserRepository:
         user = await self._collection.find_one({"email": email})
         if user:
             user["_id"] = str(user["_id"])  # normalize to string for API layer
+        return user
+
+    async def get_user_by_email_case_insensitive(self, email: str) -> Optional[dict]:
+        pattern = re.escape(email)
+        user = await self._collection.find_one({"email": {"$regex": f"^{pattern}$", "$options": "i"}})
+        if user:
+            user["_id"] = str(user["_id"])
         return user
 
     async def get_user_by_id(self, user_id: str) -> Optional[dict]:
@@ -98,5 +110,12 @@ class UserRepository:
             return result.modified_count > 0
         except Exception:
             return False
+
+    async def update_password_hash(self, user_id: str, hashed_password: str) -> bool:
+        result = await self._collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"hashed_password": hashed_password}}
+        )
+        return result.modified_count > 0
 
 

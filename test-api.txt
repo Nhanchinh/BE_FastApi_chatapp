@@ -404,3 +404,62 @@ Ghi chú (Chat nâng cao):
         }
       ]
     }
+
+15) OTP API (Quên mật khẩu / xác thực email)
+
+15.1) POST /auth/request-otp
+  - Mô tả: Gửi mã OTP 6 chữ số qua email, hiệu lực 2 phút.
+  - Body (JSON): { "email": "user@example.com" }
+  - Curl:
+    curl -X POST http://localhost:8000/auth/request-otp \
+      -H "Content-Type: application/json" \
+      -d '{"email":"user@example.com"}'
+  - Ghi chú: cần cấu hình biến môi trường GMAIL và APP_PASSWORD (App Password Gmail) để gửi mail.
+
+15.2) POST /auth/verify-otp
+  - Mô tả: Kiểm tra OTP, sau khi xác minh thành công trả reset_token dùng để đặt mật khẩu mới.
+  - Body (JSON): { "email": "user@example.com", "otp": "123456" }
+  - Curl:
+    curl -X POST http://localhost:8000/auth/verify-otp \
+      -H "Content-Type: application/json" \
+      -d '{"email":"user@example.com","otp":"123456"}'
+  - Response mẫu:
+    {
+      "success": true,
+      "message": "Xác minh OTP thành công",
+      "reset_token": "1234561700000",   // Token tạm, hết hạn trong 5 phút
+      "expires_in": 300
+    }
+  - Trường hợp lỗi:
+    • OTP không tồn tại → detail: "Không tìm thấy OTP"
+    • OTP hết hạn → detail: "OTP đã hết hạn"
+    • OTP sai → detail: "OTP không đúng"
+
+15.3) POST /auth/reset-password
+  - Mô tả: Đặt lại mật khẩu mới sau khi có reset_token.
+  - Body (JSON): { "email": "user@example.com", "new_password": "NewPass123", "token": "<reset_token>" }
+  - Curl:
+    curl -X POST http://localhost:8000/auth/reset-password \
+      -H "Content-Type: application/json" \
+      -d '{
+            "email":"user@example.com",
+            "new_password":"NewPass123",
+            "token":"1234561700000"
+          }'
+  - Response mẫu:
+    {"success": true, "message": "Đặt lại mật khẩu thành công"}
+  - Lưu ý: Token chỉ dùng một lần và hết hạn sau 5 phút.
+
+15.4) POST /auth/change-password (yêu cầu token)
+  - Mô tả: Người dùng đã đăng nhập muốn đổi mật khẩu (cung cấp mật khẩu cũ + mật khẩu mới).
+  - Body (JSON): { "old_password": "OldPass123", "new_password": "NewPass456" }
+  - Curl:
+    USER_TOKEN="<JWT_USER>"
+    curl -X POST http://localhost:8000/auth/change-password \
+      -H "Authorization: Bearer $USER_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{"old_password":"OldPass123","new_password":"NewPass456"}'
+  - Response mẫu:
+    {"success": true, "message": "Thay đổi mật khẩu thành công"}
+  - Trường hợp lỗi:
+    • Sai mật khẩu cũ → detail: "Mật khẩu cũ không chính xác"

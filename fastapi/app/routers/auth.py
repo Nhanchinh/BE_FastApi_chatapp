@@ -1,7 +1,10 @@
 from datetime import datetime, timezone
+import random
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel, EmailStr
 
 from app.database.connection import mongo_db_dependency
 from app.repositories.user_repository import UserRepository
@@ -23,11 +26,40 @@ from app.utils.security import (
     create_refresh_token,
     parse_refresh_token,
     verify_password,
+    hash_password,
     JWT_EXPIRES_MINUTES,
 )
+from app.utils.email_utils import send_otp_email
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+OTP_TTL_SECONDS = 120
+RESET_TOKEN_TTL_SECONDS = 300
+
+otp_store: dict[str, dict[str, int | str]] = {}
+reset_token_store: dict[str, dict[str, int | str]] = {}
+
+
+# OTP Schemas
+class OTPRequest(BaseModel):
+    email: EmailStr
+
+
+class VerifyOTPRequest(BaseModel):
+    email: EmailStr
+    otp: str
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    new_password: str
+    token: str
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
 
 
 # Khởi tạo UserService ở đây để tái sử dụng
@@ -288,3 +320,109 @@ async def refresh_tokens(
         refresh_token=new_refresh_token,
         refresh_expires_in=refresh_expires_in,
     )
+
+
+@router.post("/request-otp")
+@limit_per_minute("5/minute")
+async def request_otp(
+    request: Request,
+    payload: OTPRequest,
+    db = Depends(mongo_db_dependency),
+):
+    email_input = payload.email.strip()
+    email_key = email_input.lower()
+    user_repo = UserRepository(db)
+    user = await user_repo.get_user_by_email(email_input)
+    if not user:
+        user = await user_repo.get_user_by_email_case_insensitive(email_input)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email không tồn tại trong hệ thống")
+
+    otp = str(random.randint(100000, 999999))
+    expires = int(time.time()) + OTP_TTL_SECONDS
+    otp_store[email_key] = {"otp": otp, "expires": expires}
+    try:
+        await send_otp_email(email_input, otp)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Không thể gửi OTP"
+        ) from e
+    return {"message": "OTP đã gửi thành công"}
+
+
+@router.post("/verify-otp")
+@limit_per_minute("30/minute")
+async def verify_otp(request: Request, payload: VerifyOTPRequest):
+    email_key = payload.email.strip().lower()
+    record = otp_store.get(email_key)
+    if not record:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Không tìm thấy OTP")
+    if int(time.time()) > int(record["expires"]):
+        del otp_store[email_key]
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP đã hết hạn")
+    if payload.otp != record["otp"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP không đúng")
+    # create temporary reset token
+    token = str(random.randint(100000, 999999)) + str(int(time.time()))
+    reset_token_store[email_key] = {
+        "email": email_key,
+        "token": token,
+        "expires": int(time.time()) + RESET_TOKEN_TTL_SECONDS,
+    }
+    del otp_store[email_key]
+    return {
+        "success": True,
+        "message": "Xác minh OTP thành công",
+        "reset_token": token,
+        "expires_in": RESET_TOKEN_TTL_SECONDS,
+    }
+
+
+@router.post("/reset-password")
+@limit_per_minute("10/minute")
+async def reset_password(request: Request, payload: ResetPasswordRequest, db = Depends(mongo_db_dependency)):
+    email_input = payload.email.strip()
+    email_key = email_input.lower()
+    record = reset_token_store.get(email_key)
+    if not record or record["token"] != payload.token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token không hợp lệ")
+    if int(time.time()) > int(record["expires"]):
+        del reset_token_store[email_key]
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token đã hết hạn")
+
+    user_repo = UserRepository(db)
+    user = await user_repo.get_user_by_email(email_input)
+    if not user:
+        user = await user_repo.get_user_by_email_case_insensitive(email_input)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email không tồn tại")
+
+    hashed = hash_password(payload.new_password)
+    await user_repo.update_password_hash(user["_id"], hashed)
+    del reset_token_store[email_key]
+    return {"success": True, "message": "Đặt lại mật khẩu thành công"}
+
+
+@router.post("/change-password")
+@limit_per_minute("10/minute")
+async def change_password(
+    request: Request,
+    payload: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user),
+    db = Depends(mongo_db_dependency),
+):
+    user_repo = UserRepository(db)
+    user = await user_repo.get_user_by_id(current_user["_id"])
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy người dùng")
+
+    if not verify_password(payload.old_password, user.get("hashed_password", "")):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mật khẩu cũ không chính xác")
+
+    new_hashed = hash_password(payload.new_password)
+    await user_repo.update_password_hash(current_user["_id"], new_hashed)
+
+    return {"success": True, "message": "Thay đổi mật khẩu thành công"}
