@@ -60,6 +60,7 @@ class MessageRepository:
             doc["media_mime_type"] = media_mime_type
         if media_size is not None:
             doc["media_size"] = media_size
+        doc["deleted"] = False  # Default to not deleted
         result = await self.collection.insert_one(doc)
         # Build API-facing dict with string ids
         api_doc = dict(doc)
@@ -153,6 +154,25 @@ class MessageRepository:
         result = await self.collection.update_one(
             {"_id": ObjectId(message_id)},
             {"$set": {"seen": True}}
+        )
+        return bool(result.modified_count)
+
+    async def delete_message(self, message_id: str, user_id: str) -> bool:
+        """
+        Mark a message as deleted (soft delete).
+        Only the sender can delete their own message.
+        """
+        message = await self.collection.find_one({"_id": ObjectId(message_id)})
+        if not message:
+            return False
+        
+        # Only sender can delete their own message
+        if message.get("sender_id") != user_id:
+            return False
+        
+        result = await self.collection.update_one(
+            {"_id": ObjectId(message_id)},
+            {"$set": {"deleted": True}}
         )
         return bool(result.modified_count)
 

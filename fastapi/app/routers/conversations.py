@@ -172,13 +172,14 @@ async def list_messages(conversation_id: str, limit: int = Query(50, ge=1, le=20
 async def delete_conversation(
     conversation_id: str,
     current_user: dict = Depends(get_current_user),
-    service: ChatService = Depends(get_chat_service)
+    service: ChatService = Depends(get_chat_service),
+    key_repo: ConversationKeyRepository = Depends(get_key_repo)
 ):
     """
-    Xóa cuộc trò chuyện.
+    Xóa cuộc trò chuyện và tất cả conversation keys liên quan.
     """
     try:
-        deleted = await service.delete_conversation(conversation_id, current_user["_id"])
+        deleted = await service.delete_conversation(conversation_id, current_user["_id"], key_repo)
         if not deleted:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

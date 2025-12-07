@@ -1,7 +1,7 @@
 import json
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
 
 from app.database.connection import mongo_db_dependency
 from app.repositories.conversation_repository import ConversationRepository
@@ -250,6 +250,65 @@ async def get_history(friend_id: str, current_user: dict = Depends(get_current_u
 async def get_unread(from_user_id: Optional[str] = None, current_user: dict = Depends(get_current_user), service: ChatService = Depends(get_chat_service)):
     messages = await service.get_unread(current_user["_id"], from_user_id)
     return {"messages": messages}
+
+
+@router.delete("/{message_id}")
+async def delete_message(
+    message_id: str,
+    current_user: dict = Depends(get_current_user),
+    service: ChatService = Depends(get_chat_service),
+    db = Depends(mongo_db_dependency)
+):
+    """
+    Delete (recall) a message. Only the sender can delete their own message.
+    Sends realtime notification to receiver.
+    """
+    from bson import ObjectId
+    
+    # Get message info before deleting (to get receiver_id and conversation_id)
+    msg_repo = MessageRepository(db)
+    message = await msg_repo.collection.find_one({"_id": ObjectId(message_id)})
+    
+    if not message:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Message not found"
+        )
+    
+    # Only sender can delete their own message
+    if message.get("sender_id") != current_user["_id"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You don't have permission to delete this message"
+        )
+    
+    # Delete the message
+    deleted = await service.delete_message(message_id, current_user["_id"])
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete message"
+        )
+    
+    # Send realtime notification to receiver
+    receiver_id = message.get("receiver_id")
+    conversation_id = str(message.get("conversation_id", ""))
+    
+    if receiver_id:
+        payload = json.dumps({
+            "type": "message_deleted",
+            "message_id": message_id,
+            "conversation_id": conversation_id,
+            "from": current_user["_id"]
+        })
+        
+        bus = await get_bus()
+        if getattr(bus, "enabled", False):
+            await bus.publish(f"user:{receiver_id}", payload)
+        else:
+            await manager.send_personal_message(receiver_id, payload)
+    
+    return {"msg": "Message deleted successfully"}
 
 
 @router.post("/mark_read")

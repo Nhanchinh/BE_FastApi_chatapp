@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional
+import logging
 
 from bson import ObjectId
 from app.repositories.conversation_repository import ConversationRepository
@@ -7,6 +8,8 @@ from app.repositories.conversation_key_repository import ConversationKeyReposito
 from app.repositories.device_repository import DeviceRepository
 from app.utils.notifications import get_push
 from app.utils.realtime_bus import get_bus
+
+logger = logging.getLogger(__name__)
 
 
 class ChatService:
@@ -81,6 +84,12 @@ class ChatService:
     async def mark_message_seen(self, message_id: str) -> bool:
         return await self._message_repo.mark_message_seen(message_id)
 
+    async def delete_message(self, message_id: str, user_id: str) -> bool:
+        """
+        Delete (recall) a message. Only the sender can delete their own message.
+        """
+        return await self._message_repo.delete_message(message_id, user_id)
+
     async def should_push_offline(self, receiver_id: str) -> bool:
         bus = await get_bus()
         if getattr(bus, "enabled", False):
@@ -101,10 +110,18 @@ class ChatService:
         tokens = await device_repo.get_tokens(receiver_id, platform="fcm")
         await push.send_fcm([t["token"] for t in tokens], title, body, data)
 
-    async def delete_conversation(self, conversation_id: str, user_id: str) -> bool:
+    async def delete_conversation(self, conversation_id: str, user_id: str, key_repo: ConversationKeyRepository = None) -> bool:
         """
         Xóa cuộc trò chuyện và tất cả messages liên quan cho user hiện tại.
+        Cũng xóa tất cả conversation keys nếu có.
         """
+        # Xóa conversation keys trước (nếu có)
+        if key_repo:
+            try:
+                await key_repo.delete_keys_for_conversation(conversation_id)
+            except Exception:
+                pass  # Ignore errors khi xóa keys
+        
         return await self._conversation_repo.delete_conversation(conversation_id, user_id, self._message_repo)
 
     async def create_conversation_with_keys(
