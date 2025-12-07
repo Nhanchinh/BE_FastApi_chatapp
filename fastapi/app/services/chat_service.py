@@ -148,7 +148,9 @@ class ChatService:
         convo = await self._conversation_repo.get_or_create_one_to_one(current_user_id, participant_id)
         conversation_id = str(convo["_id"])
         
-        # Lưu encrypted keys cho tất cả participants
+        # **CRITICAL**: Only store key for the current user (who is creating the conversation)
+        # Do NOT overwrite keys for other users - they will upload their own keys
+        # This prevents race conditions when both users create conversation simultaneously
         stored_count = 0
         for key_data in encrypted_keys:
             user_id = key_data.get("user_id")
@@ -157,11 +159,33 @@ class ChatService:
             if not user_id or not encrypted_key:
                 continue
             
-            await key_repo.store_key(conversation_id, user_id, encrypted_key)
-            stored_count += 1
+            # Only store key for the current user
+            # Other users will upload their own keys when they create conversation or receive first message
+            if user_id == current_user_id:
+                # Check if key already exists (to avoid overwriting if conversation was created by peer)
+                existing_key = await key_repo.get_key(conversation_id, user_id)
+                if existing_key is None:
+                    # Key doesn't exist, safe to store
+                    await key_repo.store_key(conversation_id, user_id, encrypted_key)
+                    stored_count += 1
+                else:
+                    # Key already exists (peer may have created it), don't overwrite
+                    # But still count as stored since key exists
+                    stored_count += 1
+                    logger.info(f"Key already exists for user {user_id} in conversation {conversation_id}, not overwriting")
+            else:
+                # For other users, only store if key doesn't exist
+                # This allows the creator to provide keys for peer, but won't overwrite if peer already uploaded
+                existing_key = await key_repo.get_key(conversation_id, user_id)
+                if existing_key is None:
+                    await key_repo.store_key(conversation_id, user_id, encrypted_key)
+                    stored_count += 1
+                else:
+                    # Key already exists (peer uploaded their own), don't overwrite
+                    logger.info(f"Key already exists for user {user_id} in conversation {conversation_id}, not overwriting")
         
         if stored_count == 0:
-            raise ValueError("No valid keys provided")
+            raise ValueError("No valid keys provided or all keys already exist")
         
         return {
             "conversation_id": conversation_id,

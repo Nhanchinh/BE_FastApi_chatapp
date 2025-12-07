@@ -26,6 +26,9 @@ async def get_public_keys_batch(user_ids: str = Query(..., description="Comma-se
     Query param: user_ids (comma-separated, e.g., "id1,id2,id3")
     Returns: {"items": [{"user_id": "...", "public_key": "..."}, ...]}
     """
+    import logging
+    logger = logging.getLogger(__name__)
+    
     user_repo = UserRepository(db)
     ids_list = [uid.strip() for uid in user_ids.split(",") if uid.strip()]
     
@@ -35,15 +38,22 @@ async def get_public_keys_batch(user_ids: str = Query(..., description="Comma-se
     if len(ids_list) > 50:
         raise HTTPException(status_code=400, detail="Maximum 50 user IDs allowed per request")
     
+    logger.info(f"[PUBLIC_KEYS] Fetching public keys for users: {ids_list}")
     users = await user_repo.get_users_by_ids(ids_list)
     
     results = []
     for user in users:
+        user_id = user.get("_id")
+        public_key = user.get("public_key")
         results.append({
-            "user_id": user.get("_id"),
-            "public_key": user.get("public_key"),
+            "user_id": user_id,
+            "public_key": public_key,
             "full_name": user.get("full_name")  # Include name for reference
         })
+        if public_key:
+            logger.info(f"[PUBLIC_KEYS] User {user_id} ({user.get('full_name')}): public key length = {len(public_key)}")
+        else:
+            logger.warning(f"[PUBLIC_KEYS] ❌ User {user_id} ({user.get('full_name')}): NO PUBLIC KEY!")
     
     return {"items": results}
 
