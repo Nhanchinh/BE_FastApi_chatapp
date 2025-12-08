@@ -14,7 +14,8 @@ from app.utils.dependencies import get_current_user
 
 
 router = APIRouter(prefix="/media", tags=["media"])
-MAX_MEDIA_SIZE = 5 * 1024 * 1024  # 5 MB
+MAX_MEDIA_SIZE = 5 * 1024 * 1024  # 5 MB for images and files
+MAX_VIDEO_SIZE = 100 * 1024 * 1024  # 100 MB for videos
 MEDIA_STORAGE_PATH = Path(os.getenv("MEDIA_STORAGE_PATH", "media_uploads")).resolve()
 MEDIA_STORAGE_PATH.mkdir(parents=True, exist_ok=True)
 
@@ -74,8 +75,15 @@ async def upload_media(
     if not conversation:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
 
-    if payload.size > MAX_MEDIA_SIZE:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Media file too large")
+    # Check size limit based on media type
+    max_size = MAX_VIDEO_SIZE if payload.mime_type.startswith("video/") else MAX_MEDIA_SIZE
+    if payload.size > max_size:
+        max_size_mb = max_size / (1024 * 1024)
+        file_size_mb = payload.size / (1024 * 1024)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Media file too large. Maximum size: {max_size_mb:.0f}MB, file size: {file_size_mb:.1f}MB"
+        )
 
     try:
         data_bytes = base64.b64decode(payload.media_data)
