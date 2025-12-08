@@ -83,6 +83,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                         "media_id": m.get("media_id"),
                         "media_mime_type": m.get("media_mime_type"),
                         "media_size": m.get("media_size"),
+                        "reply_to": m.get("reply_to"),
                     }))
             except Exception:
                 pass
@@ -144,6 +145,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
             media_id = msg.get("media_id")
             media_mime_type = msg.get("media_mime_type")
             media_size = msg.get("media_size")
+            reply_to = msg.get("reply_to")
             ack = await service.send_message(
                 msg["from"], 
                 msg["to"], 
@@ -154,6 +156,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                 media_id=media_id,
                 media_mime_type=media_mime_type,
                 media_size=media_size,
+                reply_to=reply_to,
             ) 
             if media_id:
                 ack["ack"]["media_id"] = media_id
@@ -174,6 +177,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                 "media_id": media_id,
                 "media_mime_type": media_mime_type,
                 "media_size": media_size,
+                "reply_to": reply_to,
             })
             if getattr(bus, "enabled", False):
                 await (await get_bus()).publish(f"user:{msg['to']}", payload)

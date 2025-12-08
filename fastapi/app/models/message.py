@@ -22,5 +22,7 @@ class MessageDocument(TypedDict, total=False):
     media_size: Optional[int]
     # Deleted flag
     deleted: Optional[bool]  # True if message is deleted/recalled
+    # Reply to message
+    reply_to: Optional[str]  # ID of message being replied to (simple approach)
 
 
