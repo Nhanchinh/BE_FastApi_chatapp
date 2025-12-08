@@ -1,4 +1,4 @@
-from typing import Optional, TypedDict
+from typing import Optional, TypedDict, Dict
 
 
 class MessageDocument(TypedDict, total=False):
@@ -24,5 +24,7 @@ class MessageDocument(TypedDict, total=False):
     deleted: Optional[bool]  # True if message is deleted/recalled
     # Reply to message
     reply_to: Optional[str]  # ID of message being replied to (simple approach)
+    # Reactions
+    reactions: Optional[Dict[str, str]]  # {user_id: emoji} - Simple reactions metadata
 
 

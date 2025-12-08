@@ -2,6 +2,7 @@ import json
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from pydantic import BaseModel
 
 from app.database.connection import mongo_db_dependency
 from app.repositories.conversation_repository import ConversationRepository
@@ -404,5 +405,78 @@ async def mark_read(body: Dict[str, Any] | None = None, current_user: dict = Dep
                 pass
     
     return {"updated": count}
+
+
+class ReactRequest(BaseModel):
+    emoji: str
+
+
+@router.post("/{message_id}/react")
+async def react_to_message(
+    message_id: str,
+    body: ReactRequest,
+    current_user: dict = Depends(get_current_user),
+    service: ChatService = Depends(get_chat_service),
+    db = Depends(mongo_db_dependency)
+):
+    """
+    Add or toggle a reaction to a message.
+    If user already reacted with same emoji, remove it.
+    If user reacted with different emoji, replace it.
+    """
+    from bson import ObjectId
+    from app.repositories.message_repository import MessageRepository
+    
+    msg_repo = MessageRepository(db)
+    
+    try:
+        # Add/update reaction
+        updated_message = await msg_repo.add_reaction(message_id, current_user["_id"], body.emoji)
+        
+        if not updated_message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message not found"
+            )
+        
+        # Get conversation participants to broadcast
+        conversation_id = str(updated_message.get("conversation_id", ""))
+        sender_id = updated_message.get("sender_id")
+        receiver_id = updated_message.get("receiver_id")
+        
+        # Broadcast reaction via WebSocket
+        reactions = updated_message.get("reactions", {}) or {}
+        payload = json.dumps({
+            "type": "reaction",
+            "message_id": message_id,
+            "conversation_id": conversation_id,
+            "user_id": current_user["_id"],
+            "emoji": body.emoji,
+            "reactions": reactions  # Send full reactions map
+        })
+        
+        bus = await get_bus()
+        # Send to both participants
+        for user_id in [sender_id, receiver_id]:
+            if user_id and user_id != current_user["_id"]:
+                if getattr(bus, "enabled", False):
+                    await bus.publish(f"user:{user_id}", payload)
+                else:
+                    await manager.send_personal_message(user_id, payload)
+        
+        return {
+            "message_id": message_id,
+            "reactions": reactions
+        }
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to add reaction: {str(e)}"
+        )
 
 

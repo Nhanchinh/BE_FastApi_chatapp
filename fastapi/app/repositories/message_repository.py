@@ -179,4 +179,46 @@ class MessageRepository:
         )
         return bool(result.modified_count)
 
+    async def add_reaction(self, message_id: str, user_id: str, emoji: str) -> Dict[str, Any]:
+        """
+        Add or update a reaction to a message.
+        If user already reacted with same emoji, remove it (toggle).
+        If user reacted with different emoji, replace it.
+        Returns updated message document.
+        """
+        message = await self.collection.find_one({"_id": ObjectId(message_id)})
+        if not message:
+            raise ValueError("Message not found")
+        
+        reactions = message.get("reactions", {}) or {}
+        current_emoji = reactions.get(user_id)
+        
+        if current_emoji == emoji:
+            # Toggle: remove reaction if same emoji
+            reactions.pop(user_id, None)
+        else:
+            # Add or replace reaction
+            reactions[user_id] = emoji
+        
+        # Update message
+        update_doc = {"reactions": reactions} if reactions else {"$unset": {"reactions": ""}}
+        if reactions:
+            result = await self.collection.update_one(
+                {"_id": ObjectId(message_id)},
+                {"$set": update_doc}
+            )
+        else:
+            result = await self.collection.update_one(
+                {"_id": ObjectId(message_id)},
+                {"$unset": {"reactions": ""}}
+            )
+        
+        # Fetch updated message
+        updated = await self.collection.find_one({"_id": ObjectId(message_id)})
+        if updated:
+            updated["_id"] = str(updated["_id"])
+            updated = convert_objectid_to_str(updated)
+            return updated
+        return {}
+
 
