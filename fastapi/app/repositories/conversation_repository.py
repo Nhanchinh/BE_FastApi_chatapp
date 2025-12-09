@@ -17,6 +17,7 @@ class ConversationRepository:
     async def ensure_indexes(self) -> None:
         await self.collection.create_index([("participants", ASCENDING)])
         await self.collection.create_index([("last_message_at", DESCENDING)])
+        await self.collection.create_index([("is_group", ASCENDING)])
 
     async def get_or_create_one_to_one(self, user_a: str, user_b: str) -> Dict[str, Any]:
         participants = sorted([user_a, user_b])
@@ -44,6 +45,20 @@ class ConversationRepository:
                     "last_message_sender_id": sender_id,  # Lưu sender_id của last message
                 },
                 "$inc": {f"unread_counters.{receiver_id}": 1},
+            },
+        )
+
+    async def update_on_new_group_message(self, conversation_id, preview: str, sender_id: str, participants: list[str]) -> None:
+        inc_fields = {f"unread_counters.{uid}": 1 for uid in participants if uid != sender_id}
+        await self.collection.update_one(
+            {"_id": conversation_id},
+            {
+                "$set": {
+                    "last_message_at": datetime.now(timezone.utc),
+                    "last_message_preview": preview,
+                    "last_message_sender_id": sender_id,
+                },
+                "$inc": inc_fields,
             },
         )
 
@@ -109,5 +124,58 @@ class ConversationRepository:
         # Xóa conversation
         result = await self.collection.delete_one({"_id": oid})
         return result.deleted_count > 0
+
+    async def get_by_id(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+        from bson import ObjectId
+        try:
+            oid = ObjectId(conversation_id)
+        except Exception:
+            return None
+        doc = await self.collection.find_one({"_id": oid})
+        if doc:
+            doc["_id"] = str(doc["_id"])
+        return doc
+
+    async def create_group(self, name: str, participants: list[str], owner_id: str) -> Dict[str, Any]:
+        doc: Dict[str, Any] = {
+            "name": name,
+            "is_group": True,
+            "participants": participants,
+            "last_message_at": datetime.now(timezone.utc),
+            "last_message_preview": None,
+            "unread_counters": {uid: 0 for uid in participants},
+            "group_key_version": 1,
+            "owner_id": owner_id,
+        }
+        result = await self.collection.insert_one(doc)
+        doc["_id"] = str(result.inserted_id)
+        return doc
+
+    async def add_members(self, conversation_id, new_members: list[str]) -> Dict[str, Any] | None:
+        update = {
+            "$addToSet": {"participants": {"$each": new_members}},
+            "$set": {f"unread_counters.{uid}": 0 for uid in new_members},
+        }
+        res = await self.collection.update_one({"_id": conversation_id}, update)
+        if res.matched_count == 0:
+            return None
+        return await self.get_by_id(str(conversation_id))
+
+    async def remove_member(self, conversation_id, member_id: str) -> bool:
+        res = await self.collection.update_one(
+            {"_id": conversation_id},
+            {
+                "$pull": {"participants": member_id},
+                "$unset": {f"unread_counters.{member_id}": ""},
+            },
+        )
+        return res.modified_count > 0
+
+    async def set_owner(self, conversation_id, owner_id: str) -> bool:
+        res = await self.collection.update_one(
+            {"_id": conversation_id},
+            {"$set": {"owner_id": owner_id}},
+        )
+        return res.modified_count > 0
 
 

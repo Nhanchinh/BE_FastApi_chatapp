@@ -60,6 +60,57 @@ class ChatService:
         await self._conversation_repo.update_on_new_message(convo_oid, preview, receiver_id, sender_id)
         return {"ack": {"message_id": saved["_id"], "conversation_id": str(convo_oid), "client_message_id": client_message_id}}
 
+    async def send_group_message(
+        self,
+        conversation_id: str,
+        sender_id: str,
+        content: str,
+        client_message_id: str | None = None,
+        iv: str | None = None,
+        is_encrypted: bool = False,
+        media_id: str | None = None,
+        media_mime_type: str | None = None,
+        media_size: int | None = None,
+        media_duration: float | None = None,
+        reply_to: str | None = None,
+        key_version: int | None = None,
+    ) -> Dict[str, Any]:
+        from bson import ObjectId
+        convo = await self._conversation_repo.get_by_id(conversation_id)
+        if not convo:
+            raise ValueError("Conversation not found")
+        try:
+            convo_oid = ObjectId(conversation_id)
+        except Exception:
+            raise ValueError("Invalid conversation id")
+        participants = convo.get("participants", [])
+        if sender_id not in participants:
+            raise ValueError("You are not a participant of this conversation")
+        saved = await self._message_repo.save_message(
+            conversation_id=convo_oid,
+            sender_id=sender_id,
+            receiver_id="GROUP",
+            content=content.strip() if content else "",
+            client_message_id=client_message_id,
+            iv=iv,
+            is_encrypted=is_encrypted,
+            media_id=media_id,
+            media_mime_type=media_mime_type,
+            media_size=media_size,
+            media_duration=media_duration,
+            reply_to=reply_to,
+        )
+        preview = "[Media]" if media_id else ("[Encrypted Message]" if is_encrypted else content.strip()[:200])
+        await self._conversation_repo.update_on_new_group_message(convo_oid, preview, sender_id, participants)
+        ack = {
+            "message_id": saved["_id"],
+            "conversation_id": conversation_id,
+            "client_message_id": client_message_id,
+        }
+        if key_version:
+            ack["key_version"] = key_version
+        return {"ack": ack, "participants": participants}
+
     async def get_history(self, conversation_id: str, limit: int = 50, cursor: str | None = None):
         from bson import ObjectId
         return await self._message_repo.get_messages_by_conversation(ObjectId(conversation_id), limit=limit, cursor=cursor)

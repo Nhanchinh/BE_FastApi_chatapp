@@ -137,10 +137,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                         pass
                 continue
 
-            if not all(k in msg for k in ("from", "to", "content")):
-                await websocket.send_text("Invalid message payload")
-                continue
-            # Support E2EE & media: extract extra fields if present
+            # Detect group vs 1-1
             iv = msg.get("iv")
             is_encrypted = msg.get("is_encrypted", False)
             media_id = msg.get("media_id")
@@ -148,6 +145,70 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
             media_size = msg.get("media_size")
             media_duration = msg.get("media_duration")
             reply_to = msg.get("reply_to")
+            conversation_id = msg.get("conversation_id")
+            key_version = msg.get("key_version")
+
+            if conversation_id:
+                # Group message
+                try:
+                    result = await service.send_group_message(
+                        conversation_id=conversation_id,
+                        sender_id=msg["from"],
+                        content=msg.get("content", "") or "",
+                        client_message_id=msg.get("client_message_id"),
+                        iv=iv,
+                        is_encrypted=is_encrypted,
+                        media_id=media_id,
+                        media_mime_type=media_mime_type,
+                        media_size=media_size,
+                        media_duration=media_duration,
+                        reply_to=reply_to,
+                        key_version=key_version,
+                    )
+                except Exception as e:
+                    await websocket.send_text(f"Error: {str(e)}")
+                    continue
+                ack = result.get("ack", {})
+                participants = result.get("participants", [])
+                if media_id:
+                    ack["media_id"] = media_id
+                    if media_mime_type:
+                        ack["media_mime_type"] = media_mime_type
+                    if media_size is not None:
+                        ack["media_size"] = media_size
+                    if media_duration is not None:
+                        ack["media_duration"] = media_duration
+                await websocket.send_text(json.dumps({"ack": ack}))
+                payload = json.dumps({
+                    "type": "message",
+                    "from": msg["from"],
+                    "content": msg.get("content", "") or "",
+                    "ack": ack,
+                    "iv": iv,
+                    "is_encrypted": is_encrypted,
+                    "media_id": media_id,
+                    "media_mime_type": media_mime_type,
+                    "media_size": media_size,
+                    "media_duration": media_duration,
+                    "reply_to": reply_to,
+                    "conversation_id": conversation_id,
+                    "key_version": key_version,
+                })
+                targets = [p for p in participants if p != msg["from"]]
+                for target in targets:
+                    try:
+                        if getattr(bus, "enabled", False):
+                            await (await get_bus()).publish(f"user:{target}", payload)
+                        else:
+                            await manager.send_personal_message(target, payload)
+                    except Exception:
+                        pass
+                continue
+
+            # 1-1 message
+            if not all(k in msg for k in ("from", "to", "content")):
+                await websocket.send_text("Invalid message payload")
+                continue
             ack = await service.send_message(
                 msg["from"], 
                 msg["to"], 
