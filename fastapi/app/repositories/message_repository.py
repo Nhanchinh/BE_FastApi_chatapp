@@ -38,6 +38,7 @@ class MessageRepository:
         media_id: Optional[str] = None,
         media_mime_type: Optional[str] = None,
         media_size: Optional[int] = None,
+        media_duration: Optional[float] = None,
         reply_to: Optional[str] = None,
     ) -> Dict[str, Any]:
         doc: Dict[str, Any] = {
@@ -61,6 +62,8 @@ class MessageRepository:
             doc["media_mime_type"] = media_mime_type
         if media_size is not None:
             doc["media_size"] = media_size
+        if media_duration is not None:
+            doc["media_duration"] = media_duration
         doc["deleted"] = False  # Default to not deleted
         if reply_to:
             doc["reply_to"] = reply_to

@@ -146,6 +146,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
             media_id = msg.get("media_id")
             media_mime_type = msg.get("media_mime_type")
             media_size = msg.get("media_size")
+            media_duration = msg.get("media_duration")
             reply_to = msg.get("reply_to")
             ack = await service.send_message(
                 msg["from"], 
@@ -157,6 +158,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                 media_id=media_id,
                 media_mime_type=media_mime_type,
                 media_size=media_size,
+                media_duration=media_duration,
                 reply_to=reply_to,
             ) 
             if media_id:
@@ -165,6 +167,8 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                     ack["ack"]["media_mime_type"] = media_mime_type
                 if media_size is not None:
                     ack["ack"]["media_size"] = media_size
+                if media_duration is not None:
+                    ack["ack"]["media_duration"] = media_duration
             # gửi ack về cho sender
             await websocket.send_text(json.dumps(ack))
             # đẩy message realtime tới receiver
@@ -178,6 +182,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                 "media_id": media_id,
                 "media_mime_type": media_mime_type,
                 "media_size": media_size,
+                "media_duration": media_duration,
                 "reply_to": reply_to,
             })
             if getattr(bus, "enabled", False):

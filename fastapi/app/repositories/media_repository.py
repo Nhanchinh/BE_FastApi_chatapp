@@ -68,6 +68,10 @@ class MediaRepository:
             "image/webp": ".webp",
             "video/mp4": ".mp4",
             "video/quicktime": ".mov",
+            "audio/mp4": ".m4a",
+            "audio/m4a": ".m4a",
+            "audio/aac": ".m4a",
+            "audio/ogg": ".ogg",
         }
         return mapping.get(mime_type.lower(), ".bin")
 

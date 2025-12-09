@@ -29,6 +29,7 @@ class ChatService:
         media_id: str | None = None,
         media_mime_type: str | None = None,
         media_size: int | None = None,
+        media_duration: float | None = None,
         reply_to: str | None = None,
     ) -> Dict[str, Any]:
         if (not content or not content.strip()) and not media_id:
@@ -46,6 +47,7 @@ class ChatService:
             media_id=media_id,
             media_mime_type=media_mime_type,
             media_size=media_size,
+            media_duration=media_duration,
             reply_to=reply_to,
         )
         # For encrypted messages, show encrypted indicator in preview

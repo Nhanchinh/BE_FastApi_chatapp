@@ -20,6 +20,7 @@ class MessageDocument(TypedDict, total=False):
     media_id: Optional[str]
     media_mime_type: Optional[str]
     media_size: Optional[int]
+    media_duration: Optional[float]
     # Deleted flag
     deleted: Optional[bool]  # True if message is deleted/recalled
     # Reply to message
