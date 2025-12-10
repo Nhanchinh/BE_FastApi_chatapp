@@ -203,6 +203,25 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                             await manager.send_personal_message(target, payload)
                     except Exception:
                         pass
+                
+                # Send FCM notification to offline group members
+                convo = await service._conversation_repo.get_by_id(conversation_id)
+                group_name = convo.get("name", "Group") if convo else "Group"
+                message_preview = msg.get("content", "") or "[Media]"
+                is_encrypted = msg.get("is_encrypted", False)
+                for target in targets:
+                    asyncio.create_task(
+                        service.send_fcm_notification_for_message(
+                            db=db,
+                            receiver_id=target,
+                            sender_id=msg["from"],
+                            message_content=message_preview,
+                            conversation_id=conversation_id,
+                            is_group=True,
+                            group_name=group_name,
+                            is_encrypted=is_encrypted
+                        )
+                    )
                 continue
 
             # 1-1 message
@@ -255,7 +274,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                 await service.mark_delivered_for_receiver(ack["ack"]["conversation_id"], msg["to"])
             except Exception:
                 pass
-            # push notification if offline
+            # push notification if offline (old system - kept for backward compatibility)
             try:
                 if await service.should_push_offline(msg["to"]):
                     await service.push_new_message(
@@ -267,6 +286,21 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                     )
             except Exception:
                 pass
+            
+            # Send FCM notification (new system)
+            message_preview = msg.get("content", "") or "[Media]"
+            is_encrypted = msg.get("is_encrypted", False)
+            asyncio.create_task(
+                service.send_fcm_notification_for_message(
+                    db=db,
+                    receiver_id=msg["to"],
+                    sender_id=msg["from"],
+                    message_content=message_preview,
+                    conversation_id=ack["ack"]["conversation_id"],
+                    is_group=False,
+                    is_encrypted=is_encrypted
+                )
+            )
     except WebSocketDisconnect:
         manager.disconnect(user_id, websocket)
         

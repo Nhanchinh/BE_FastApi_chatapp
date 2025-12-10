@@ -51,3 +51,5 @@ logs/
 *.p12
 #upload 
 media_uploads
+
+serviceAccountKey.json

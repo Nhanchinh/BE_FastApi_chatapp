@@ -6,8 +6,11 @@ from app.repositories.conversation_repository import ConversationRepository
 from app.repositories.message_repository import MessageRepository
 from app.repositories.conversation_key_repository import ConversationKeyRepository
 from app.repositories.device_repository import DeviceRepository
+from app.repositories.fcm_token_repository import FCMTokenRepository
+from app.repositories.user_repository import UserRepository
 from app.utils.notifications import get_push
 from app.utils.realtime_bus import get_bus
+from app.services.fcm_service import fcm_service
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +167,83 @@ class ChatService:
         device_repo = DeviceRepository(db)
         tokens = await device_repo.get_tokens(receiver_id, platform="fcm")
         await push.send_fcm([t["token"] for t in tokens], title, body, data)
+
+    async def send_fcm_notification_for_message(
+        self,
+        db,
+        receiver_id: str,
+        sender_id: str,
+        message_content: str,
+        conversation_id: str,
+        is_group: bool = False,
+        group_name: Optional[str] = None,
+        is_encrypted: bool = False
+    ):
+        """
+        Send FCM push notification to receiver when they receive a new message.
+        Only sends if receiver is offline.
+        """
+        try:
+            # Check if receiver is online
+            is_offline = await self.should_push_offline(receiver_id)
+            if not is_offline:
+                logger.info(f"Receiver {receiver_id} is online, skipping FCM notification")
+                return
+            
+            # Get FCM tokens for receiver
+            fcm_repo = FCMTokenRepository(db)
+            fcm_tokens = await fcm_repo.get_user_tokens(receiver_id)
+            
+            if not fcm_tokens:
+                logger.info(f"No FCM tokens found for receiver {receiver_id}")
+                return
+            
+            # **CRITICAL**: Verify conversation type from database to ensure accuracy
+            # This prevents bugs where is_group flag might be incorrect
+            convo = await self._conversation_repo.get_by_id(conversation_id)
+            if convo:
+                # Override is_group with actual value from database
+                actual_is_group = convo.get("is_group", False)
+                if actual_is_group != is_group:
+                    logger.warning(
+                        f"⚠️ Conversation type mismatch for {conversation_id}: "
+                        f"passed is_group={is_group}, but database says is_group={actual_is_group}. "
+                        f"Using database value."
+                    )
+                    is_group = actual_is_group
+                
+                # Get group name from database if not provided
+                if is_group and not group_name:
+                    group_name = convo.get("name", "Group")
+            else:
+                logger.warning(f"⚠️ Conversation {conversation_id} not found in database, using passed is_group={is_group}")
+            
+            # Get sender's name
+            user_repo = UserRepository(db)
+            sender = await user_repo.get_user_by_id(sender_id)
+            sender_name = sender.get("full_name") or sender.get("email") or "Someone" if sender else "Someone"
+            
+            # Send notification to all tokens
+            for token in fcm_tokens:
+                await fcm_service.send_chat_message_notification(
+                    fcm_token=token,
+                    sender_name=sender_name,
+                    message_content=message_content,
+                    conversation_id=conversation_id,
+                    is_group=is_group,
+                    group_name=group_name,
+                    sender_id=sender_id,
+                    is_encrypted=is_encrypted
+                )
+            
+            logger.info(
+                f"✅ FCM notification sent to {len(fcm_tokens)} device(s) for receiver {receiver_id} "
+                f"(conversation={conversation_id}, is_group={is_group})"
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to send FCM notification: {e}")
+            # Don't raise exception - notification failure shouldn't break message sending
 
     async def delete_conversation(self, conversation_id: str, user_id: str, key_repo: ConversationKeyRepository = None) -> bool:
         """

@@ -463,3 +463,233 @@ Ghi chú (Chat nâng cao):
     {"success": true, "message": "Thay đổi mật khẩu thành công"}
   - Trường hợp lỗi:
     • Sai mật khẩu cũ → detail: "Mật khẩu cũ không chính xác"
+
+=======================================
+FCM PUSH NOTIFICATION TESTING
+=======================================
+
+📱 Test 0: Test API trực tiếp (KHUYÊN DÙNG)
+---------------------------------
+cd D:\ATBM\BE\fastapi
+python -m test_fcm_api
+
+Kết quả mong đợi:
+1️⃣ Login to get auth token...
+✅ Login successful
+2️⃣ Register FCM token...
+✅ FCM token registered!
+3️⃣ Verify in MongoDB:
+4️⃣ Send test notification...
+✅ Test completed!
+
+
+📱 Test 1: Kiểm tra DB trực tiếp
+---------------------------------
+cd D:\ATBM\BE\fastapi
+python -m test_fcm_db
+
+Kết quả mong đợi:
+✅ Inserted test token with ID: ...
+✅ Verified: Token exists in DB
+📊 Total FCM tokens in DB: X
+
+
+📱 Test 2: Đăng ký FCM Token qua API
+---------------------------------
+# Lấy USER_TOKEN từ login trước
+USER_TOKEN="<JWT_TOKEN>"
+FCM_TOKEN="test_token_123abc..."
+
+curl -X POST http://localhost:8000/fcm/token \
+  -H "Authorization: Bearer $USER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fcm_token": "'$FCM_TOKEN'",
+    "device_id": "android_device_001",
+    "device_type": "android"
+  }'
+
+Response:
+{
+  "success": true,
+  "message": "FCM token registered successfully"
+}
+
+
+📱 Test 3: Kiểm tra tokens trong MongoDB
+---------------------------------
+# Vào MongoDB shell
+mongo
+use chatapp
+db.fcm_tokens.find().pretty()
+
+Kết quả mong đợi:
+{
+  "_id": ObjectId("..."),
+  "user_id": "673c...",
+  "fcm_token": "eA1bC2...",
+  "device_id": "android_device_001",
+  "device_type": "android",
+  "created_at": ISODate("..."),
+  "updated_at": ISODate("..."),
+  "is_active": true
+}
+
+
+📱 Test 4: Gửi notification test
+---------------------------------
+curl -X POST http://localhost:8000/test/send-notification \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fcm_token": "COPY_FCM_TOKEN_FROM_DB",
+    "title": "Test Notification",
+    "body": "Hello from FCM!",
+    "conversation_id": "test123"
+  }'
+
+Response:
+{
+  "success": true,
+  "message": "Notification sent successfully"
+}
+
+
+📱 Test 5: Kiểm tra Backend Logs
+---------------------------------
+# Check uvicorn logs để xem:
+📥 Received FCM token registration request from user: ...
+🔍 Checking if FCM token exists for user ...
+➕ Inserting new FCM token for user ...
+✅ User ... now has 1 active FCM token(s)
+✅ FCM token registered successfully for user ...
+
+
+📱 Test 6: Full End-to-End Test
+---------------------------------
+1. Login vào app Android
+2. Check logcat:
+   ✅ FCM Token: eA1b...
+   ✅ FCM token sent to server successfully
+
+3. Force close app (để offline)
+
+4. Dùng thiết bị khác gửi tin nhắn
+
+5. Notification sẽ hiện trên màn hình ✅
+
+
+📱 Troubleshooting
+---------------------------------
+Nếu KHÔNG có device trong DB, follow các bước sau:
+
+STEP 1: Test API trực tiếp (bỏ qua Android app)
+------------------------------------------------
+cd D:\ATBM\BE\fastapi
+python -m test_fcm_api
+
+Nếu test này PASS:
+✅ Backend OK, Firebase OK, DB OK
+❌ Vấn đề ở Android app
+
+Nếu test này FAIL:
+❌ Vấn đề ở Backend/DB/Firebase
+
+
+STEP 2: Check Backend logs chi tiết
+------------------------------------
+Backend logs phải có:
+✅ Firebase Admin SDK initialized successfully
+📥 Received FCM token registration request from user: ...
+🔍 Checking if FCM token exists for user ...
+➕ Inserting new FCM token for user ...
+✅ User ... now has 1 active FCM token(s)
+
+Nếu KHÔNG thấy:
+→ App KHÔNG gọi API hoặc gọi SAI endpoint
+
+
+STEP 3: Check Android Logcat (Filter: "AuthViewModel" hoặc "FCM")
+------------------------------------------------------------------
+Logs mong đợi khi LOGIN:
+🔐 Login function called
+   Access token: eyJhb...
+👤 User profile loaded: user@example.com
+🔔 Starting FCM token registration process...
+✅ FCM token registration initiated
+🔄 Starting FCM token retrieval process...
+📡 Firebase token task completed. Success: true
+✅ FCM Token received: eA1bC2dE3fG4...
+💾 FCM token saved locally
+📤 Sending FCM token to backend...
+🚀 sendTokenToServer called
+📱 Getting device ID...
+📦 Creating FCM token request...
+🌐 Calling API registerFCMToken...
+📨 API response received
+   Success: true
+✅ FCM token sent to server successfully
+
+Các lỗi thường gặp:
+
+❌ "Fatal error getting FCM token"
+→ Firebase chưa init hoặc google-services.json sai
+
+❌ "HTTP Error... 401"
+→ Access token hết hạn hoặc sai
+
+❌ "Network error: Cannot reach server"
+→ Backend không chạy hoặc IP sai
+
+❌ "FCM token is null or empty"
+→ Firebase chưa được config đúng
+
+
+STEP 4: Verify Firebase config
+-------------------------------
+Android:
+- FE/chatapp_kotlin/chatapp/app/google-services.json ✅
+- build.gradle có plugin google-services ✅
+
+Backend:
+- BE/fastapi/serviceAccountKey.json ✅
+- File có project_id: "chatapp-3484b" ✅
+
+
+STEP 5: Test từng component riêng
+----------------------------------
+a) Test DB:
+   python -m test_fcm_db
+
+b) Test API:
+   python -m test_fcm_api
+
+c) Test bằng curl:
+   curl -X POST http://localhost:8000/fcm/token \
+     -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"fcm_token":"test123","device_id":"dev001","device_type":"android"}'
+
+d) Check MongoDB:
+   mongo
+   use chatapp
+   db.fcm_tokens.find().pretty()
+
+
+STEP 6: Common Issues & Solutions
+----------------------------------
+Issue: Backend không log gì về FCM
+→ App KHÔNG gọi POST /fcm/token
+→ Check AuthViewModel.login() có chạy không
+→ Check FCMManager được khởi tạo đúng không
+
+Issue: Backend log "401 Unauthorized"
+→ Access token sai hoặc hết hạn
+→ Check header: "Bearer TOKEN" (có dấu cách)
+
+Issue: Firebase error
+→ google-services.json không đúng
+→ Build lại app: ./gradlew clean assembleDebug
+
+Issue: DB connection error
+→ MongoDB không chạy
+→ Connection string sai

@@ -21,7 +21,15 @@ class ConversationRepository:
 
     async def get_or_create_one_to_one(self, user_a: str, user_b: str) -> Dict[str, Any]:
         participants = sorted([user_a, user_b])
-        existing = await self.collection.find_one({"participants": participants})
+        # **CRITICAL**: Only find 1-1 conversations (not groups)
+        # Check for conversations with same participants AND is_group is False or not set
+        existing = await self.collection.find_one({
+            "participants": participants,
+            "$or": [
+                {"is_group": False},
+                {"is_group": {"$exists": False}}
+            ]
+        })
         if existing:
             existing["_id"] = str(existing.get("_id"))
             return existing
@@ -30,6 +38,7 @@ class ConversationRepository:
             "last_message_at": datetime.now(timezone.utc),
             "last_message_preview": None,
             "unread_counters": {user_a: 0, user_b: 0},
+            "is_group": False,  # Explicitly mark as 1-1 conversation
         }
         result = await self.collection.insert_one(doc)
         doc["_id"] = str(result.inserted_id)
