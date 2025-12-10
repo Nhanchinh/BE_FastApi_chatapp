@@ -18,6 +18,7 @@ from app.routers.conversation_keys import router as conversation_keys_router
 from app.routers.media import router as media_router
 from app.routers.fcm import router as fcm_router
 from app.routers.fcm_test import router as fcm_test_router
+from app.routers.zego import router as zego_router
 from app.utils.rate_limiter import limiter
 
 
@@ -57,6 +58,7 @@ app.include_router(conversation_keys_router)
 app.include_router(media_router)
 app.include_router(fcm_router)
 app.include_router(fcm_test_router)  # Test endpoint - remove in production
+app.include_router(zego_router)
 
 
 @app.get("/")
