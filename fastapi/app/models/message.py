@@ -27,5 +27,7 @@ class MessageDocument(TypedDict, total=False):
     reply_to: Optional[str]  # ID of message being replied to (simple approach)
     # Reactions
     reactions: Optional[Dict[str, str]]  # {user_id: emoji} - Simple reactions metadata
+    # Message type (text, image, call_log, missed_call, rejected_call, etc.)
+    message_type: Optional[str]
 
 

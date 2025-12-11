@@ -34,6 +34,7 @@ class ChatService:
         media_size: int | None = None,
         media_duration: float | None = None,
         reply_to: str | None = None,
+        message_type: str | None = None,
     ) -> Dict[str, Any]:
         if (not content or not content.strip()) and not media_id:
             raise ValueError("Message content cannot be empty")
@@ -52,16 +53,19 @@ class ChatService:
             media_size=media_size,
             media_duration=media_duration,
             reply_to=reply_to,
+            message_type=message_type,
         )
         # For encrypted messages, show encrypted indicator in preview
-        if media_id:
+        if message_type in ("call_log", "missed_call", "rejected_call"):
+            preview = content.strip()[:200] if content else "Call"
+        elif media_id:
             preview = "[Media]"
         elif is_encrypted:
             preview = "[Encrypted Message]"
         else:
             preview = content.strip()[:200]
         await self._conversation_repo.update_on_new_message(convo_oid, preview, receiver_id, sender_id)
-        return {"ack": {"message_id": saved["_id"], "conversation_id": str(convo_oid), "client_message_id": client_message_id}}
+        return {"ack": {"message_id": saved["_id"], "conversation_id": str(convo_oid), "client_message_id": client_message_id, "message_type": message_type}}
 
     async def send_group_message(
         self,
@@ -77,6 +81,7 @@ class ChatService:
         media_duration: float | None = None,
         reply_to: str | None = None,
         key_version: int | None = None,
+        message_type: str | None = None,
     ) -> Dict[str, Any]:
         from bson import ObjectId
         convo = await self._conversation_repo.get_by_id(conversation_id)
@@ -102,13 +107,18 @@ class ChatService:
             media_size=media_size,
             media_duration=media_duration,
             reply_to=reply_to,
+            message_type=message_type,
         )
-        preview = "[Media]" if media_id else ("[Encrypted Message]" if is_encrypted else content.strip()[:200])
+        if message_type in ("call_log", "missed_call", "rejected_call"):
+            preview = content.strip()[:200] if content else "Call"
+        else:
+            preview = "[Media]" if media_id else ("[Encrypted Message]" if is_encrypted else content.strip()[:200])
         await self._conversation_repo.update_on_new_group_message(convo_oid, preview, sender_id, participants)
         ack = {
             "message_id": saved["_id"],
             "conversation_id": conversation_id,
             "client_message_id": client_message_id,
+            "message_type": message_type,
         }
         if key_version:
             ack["key_version"] = key_version

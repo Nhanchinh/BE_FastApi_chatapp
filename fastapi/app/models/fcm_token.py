@@ -23,3 +23,4 @@ class FCMTokenResponse(BaseModel):
     success: bool
     message: str
 
+

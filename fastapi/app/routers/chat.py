@@ -85,6 +85,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                         "media_mime_type": m.get("media_mime_type"),
                         "media_size": m.get("media_size"),
                         "reply_to": m.get("reply_to"),
+                        "message_type": m.get("message_type"),
                     }))
             except Exception:
                 pass
@@ -147,6 +148,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
             reply_to = msg.get("reply_to")
             conversation_id = msg.get("conversation_id")
             key_version = msg.get("key_version")
+            message_type = msg.get("message_type")
 
             if conversation_id:
                 # Group message
@@ -164,6 +166,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                         media_duration=media_duration,
                         reply_to=reply_to,
                         key_version=key_version,
+                        message_type=message_type,
                     )
                 except Exception as e:
                     await websocket.send_text(f"Error: {str(e)}")
@@ -193,6 +196,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                     "reply_to": reply_to,
                     "conversation_id": conversation_id,
                     "key_version": key_version,
+                    "message_type": message_type,
                 })
                 targets = [p for p in participants if p != msg["from"]]
                 for target in targets:
@@ -240,6 +244,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                 media_size=media_size,
                 media_duration=media_duration,
                 reply_to=reply_to,
+                message_type=message_type,
             ) 
             if media_id:
                 ack["ack"]["media_id"] = media_id
@@ -264,6 +269,7 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                 "media_size": media_size,
                 "media_duration": media_duration,
                 "reply_to": reply_to,
+                "message_type": message_type,
             })
             if getattr(bus, "enabled", False):
                 await (await get_bus()).publish(f"user:{msg['to']}", payload)

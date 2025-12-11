@@ -40,6 +40,7 @@ class MessageRepository:
         media_size: Optional[int] = None,
         media_duration: Optional[float] = None,
         reply_to: Optional[str] = None,
+        message_type: Optional[str] = None,
     ) -> Dict[str, Any]:
         doc: Dict[str, Any] = {
             "conversation_id": conversation_id,
@@ -67,6 +68,8 @@ class MessageRepository:
         doc["deleted"] = False  # Default to not deleted
         if reply_to:
             doc["reply_to"] = reply_to
+        if message_type:
+            doc["message_type"] = message_type
         result = await self.collection.insert_one(doc)
         # Build API-facing dict with string ids
         api_doc = dict(doc)
