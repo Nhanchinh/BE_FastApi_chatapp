@@ -1,9 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.database.connection import mongo_db_dependency
 from app.repositories.friend_repository import FriendRepository
+from app.repositories.notification_repository import NotificationRepository
 from app.repositories.user_repository import UserRepository
+from app.repositories.fcm_token_repository import FCMTokenRepository
 from app.services.friend_service import FriendService
+from app.services.fcm_service import FCMService
 from app.utils.dependencies import get_current_user
+
+
+def _display_name(user: dict | None) -> str:
+    """Prefer full_name, fallback to email or generic label."""
+    if not user:
+        return "Người dùng"
+    return user.get("full_name") or user.get("email") or "Người dùng"
 
 router = APIRouter(prefix="/friends", tags=["friend"])
 
@@ -37,22 +47,130 @@ async def send_friend_request(target_user_id: str, current_user: dict = Depends(
         
         # This shouldn't happen, but just in case
         raise HTTPException(status_code=400, detail="Unable to send friend request.")
+    
+    # Push notification to receiver
+    try:
+        user_repo = UserRepository(db)
+        notif_repo = NotificationRepository(db)
+        fcm_repo = FCMTokenRepository(db)
+        requester = await user_repo.get_user_by_id(requester_id)
+        receiver = await user_repo.get_user_by_id(target_user_id)
+        sender_name = _display_name(requester)
+        title = "Lời mời kết bạn"
+        body = f"{sender_name} đã gửi cho bạn lời mời kết bạn"
+        data = {"type": "friend_request", "from_user_id": requester_id}
+        await notif_repo.create_notification(
+            user_id=target_user_id,
+            title=title,
+            body=body,
+            notif_type="friend_request",
+            from_user_id=requester_id,
+            from_user_name=sender_name,
+            data=data,
+        )
+        tokens = await fcm_repo.get_user_tokens(target_user_id)
+        if tokens:
+            fcm_service = FCMService()
+            payload = {k: str(v) for k, v in data.items()}
+            for token in tokens:
+                try:
+                    await fcm_service.send_notification(token, title, body, payload)
+                except Exception:
+                    pass
+    except Exception:
+        # Notification failures should not block the main flow
+        pass
+
     return {"msg": "Request sent"}
 
 @router.post("/accept/{from_user_id}")
-async def accept_friend_request(from_user_id: str, current_user: dict = Depends(get_current_user), service: FriendService = Depends(get_friend_service)):
+async def accept_friend_request(from_user_id: str, current_user: dict = Depends(get_current_user), service: FriendService = Depends(get_friend_service), db = Depends(mongo_db_dependency)):
     ok = await service.accept_friend_request(from_user_id, current_user["_id"])
     if not ok:
         raise HTTPException(status_code=400, detail="No pending request to accept.")
+    
+    # Notify the original requester that their invite was accepted
+    try:
+        user_repo = UserRepository(db)
+        notif_repo = NotificationRepository(db)
+        fcm_repo = FCMTokenRepository(db)
+        accepter = await user_repo.get_user_by_id(current_user["_id"])
+        requester = await user_repo.get_user_by_id(from_user_id)
+        accepter_name = _display_name(accepter)
+        title = "Kết bạn thành công"
+        body = f"{accepter_name} đã chấp nhận lời mời kết bạn"
+        data = {"type": "friend_accept", "from_user_id": current_user["_id"]}
+        await notif_repo.create_notification(
+            user_id=from_user_id,
+            title=title,
+            body=body,
+            notif_type="friend_accept",
+            from_user_id=current_user["_id"],
+            from_user_name=accepter_name,
+            data=data,
+        )
+        tokens = await fcm_repo.get_user_tokens(from_user_id)
+        if tokens:
+            fcm_service = FCMService()
+            payload = {k: str(v) for k, v in data.items()}
+            for token in tokens:
+                try:
+                    await fcm_service.send_notification(token, title, body, payload)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     return {"msg": "Friend added"}
 
 @router.delete("/request/{user_id}")
-async def cancel_friend_request(user_id: str, current_user: dict = Depends(get_current_user), service: FriendService = Depends(get_friend_service)):
+async def cancel_friend_request(user_id: str, current_user: dict = Depends(get_current_user), service: FriendService = Depends(get_friend_service), db = Depends(mongo_db_dependency)):
     ok = await service.cancel_friend_request(current_user["_id"], user_id)
+    direction = "sent" if ok else None
     if not ok:
         ok = await service.cancel_friend_request(user_id, current_user["_id"])
+        if ok:
+            direction = "received"
     if not ok:
         raise HTTPException(status_code=404, detail="No such request.")
+
+    # Notify the other user that the request was cancelled/rejected
+    try:
+        user_repo = UserRepository(db)
+        notif_repo = NotificationRepository(db)
+        fcm_repo = FCMTokenRepository(db)
+        actor = await user_repo.get_user_by_id(current_user["_id"])
+        actor_name = _display_name(actor)
+        target_user_id = user_id
+        title = "Lời mời kết bạn bị hủy"
+        if direction == "sent":
+            body = f"{actor_name} đã hủy lời mời kết bạn"
+            notif_type = "friend_request_cancel"
+        else:
+            body = f"{actor_name} đã từ chối lời mời kết bạn"
+            notif_type = "friend_request_reject"
+        data = {"type": notif_type, "from_user_id": current_user["_id"]}
+        await notif_repo.create_notification(
+            user_id=target_user_id,
+            title=title,
+            body=body,
+            notif_type=notif_type,
+            from_user_id=current_user["_id"],
+            from_user_name=actor_name,
+            data=data,
+        )
+        tokens = await fcm_repo.get_user_tokens(target_user_id)
+        if tokens:
+            fcm_service = FCMService()
+            payload = {k: str(v) for k, v in data.items()}
+            for token in tokens:
+                try:
+                    await fcm_service.send_notification(token, title, body, payload)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     return {"msg": "Request cancelled"}
 
 @router.get("/list")
@@ -108,6 +226,39 @@ async def unfriend(friend_id: str, current_user: dict = Depends(get_current_user
     ok = await service.unfriend(current_user["_id"], friend_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Friend relation not found.")
+
+    # Notify the other user about unfriend action
+    try:
+        db = service.friend_repo._user_collection.database  # reuse db from repo
+        user_repo = UserRepository(db)
+        notif_repo = NotificationRepository(db)
+        fcm_repo = FCMTokenRepository(db)
+        actor = await user_repo.get_user_by_id(current_user["_id"])
+        actor_name = _display_name(actor)
+        title = "Bị hủy kết bạn"
+        body = f"{actor_name} đã hủy kết bạn với bạn"
+        data = {"type": "unfriend", "from_user_id": current_user["_id"]}
+        await notif_repo.create_notification(
+            user_id=friend_id,
+            title=title,
+            body=body,
+            notif_type="unfriend",
+            from_user_id=current_user["_id"],
+            from_user_name=actor_name,
+            data=data,
+        )
+        tokens = await fcm_repo.get_user_tokens(friend_id)
+        if tokens:
+            fcm_service = FCMService()
+            payload = {k: str(v) for k, v in data.items()}
+            for token in tokens:
+                try:
+                    await fcm_service.send_notification(token, title, body, payload)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
     return {"msg": "Unfriended"}
 
 @router.get("/{friend_id}")
