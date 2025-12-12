@@ -16,7 +16,7 @@ async def send_test_notification(request: TestNotificationRequest):
     Test endpoint để gửi notification thủ công
     Không cần authentication - chỉ để test
     """
-    success = await fcm_service.send_chat_message_notification(
+    success, token_invalid = await fcm_service.send_chat_message_notification(
         fcm_token=request.fcm_token,
         sender_name=request.title,
         message_content=request.body,
@@ -29,10 +29,16 @@ async def send_test_notification(request: TestNotificationRequest):
             "success": True,
             "message": "Notification sent successfully"
         }
+    elif token_invalid:
+        return {
+            "success": False,
+            "message": "Failed to send notification: FCM token is invalid or unregistered"
+        }
     else:
         return {
             "success": False,
             "message": "Failed to send notification"
         }
+
 
 

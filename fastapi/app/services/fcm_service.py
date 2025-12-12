@@ -89,7 +89,8 @@ class FCMService:
             return True
             
         except messaging.UnregisteredError:
-            logger.warning(f"⚠️ FCM token is invalid or unregistered: {fcm_token}")
+            logger.warning(f"⚠️ FCM token is invalid or unregistered: {fcm_token[:20]}...")
+            # Note: Token deactivation should be handled by caller if db is available
             return False
         except Exception as e:
             logger.error(f"❌ Failed to send notification: {e}")
@@ -171,8 +172,13 @@ class FCMService:
         is_group: bool = False,
         group_name: Optional[str] = None,
         sender_id: Optional[str] = None,
-        is_encrypted: bool = False
-    ) -> bool:
+        is_encrypted: bool = False,
+        db = None  # Optional database for auto-deactivating invalid tokens
+    ) -> tuple[bool, bool]:
+        """
+        Returns: (success: bool, token_invalid: bool)
+        If token_invalid is True, the token should be deactivated in database
+        """
         """
         Send notification for new chat message
         
@@ -224,12 +230,52 @@ class FCMService:
         if group_name:
             data["group_name"] = group_name
 
-        return await self.send_notification(
-            fcm_token=fcm_token,
-            title=title,
-            body=body,
-            data=data
-        )
+        # Send notification directly to catch UnregisteredError
+        try:
+            # Build notification
+            notification = messaging.Notification(
+                title=title,
+                body=body
+            )
+            
+            # Build Android-specific config
+            android_config = messaging.AndroidConfig(
+                priority='high',
+                notification=messaging.AndroidNotification(
+                    channel_id='chat_messages',
+                    sound='default',
+                    priority='high'
+                )
+            )
+            
+            # Build message
+            message = messaging.Message(
+                notification=notification,
+                data=data,
+                token=fcm_token,
+                android=android_config
+            )
+            
+            # Send message
+            response = messaging.send(message)
+            logger.info(f"✅ Chat notification sent successfully: {response}")
+            return (True, False)  # (success, token_invalid)
+            
+        except messaging.UnregisteredError:
+            # Token is invalid, should be deactivated in database
+            logger.warning(f"⚠️ FCM token is invalid or unregistered: {fcm_token[:20]}...")
+            if db:
+                try:
+                    from app.repositories.fcm_token_repository import FCMTokenRepository
+                    fcm_repo = FCMTokenRepository(db)
+                    await fcm_repo.deactivate_token(fcm_token)
+                    logger.info(f"✅ Auto-deactivated invalid FCM token")
+                except Exception as deactivate_error:
+                    logger.error(f"❌ Failed to deactivate invalid token: {deactivate_error}")
+            return (False, True)  # (success=False, token_invalid=True)
+        except Exception as e:
+            logger.error(f"❌ Failed to send chat notification: {e}")
+            return (False, False)  # (success=False, token_invalid=False)
 
 
 # Singleton instance

@@ -233,9 +233,11 @@ class ChatService:
             sender = await user_repo.get_user_by_id(sender_id)
             sender_name = sender.get("full_name") or sender.get("email") or "Someone" if sender else "Someone"
             
-            # Send notification to all tokens
+            # Send notification to all tokens and track invalid ones
+            success_count = 0
+            invalid_tokens = []
             for token in fcm_tokens:
-                await fcm_service.send_chat_message_notification(
+                success, token_invalid = await fcm_service.send_chat_message_notification(
                     fcm_token=token,
                     sender_name=sender_name,
                     message_content=message_content,
@@ -243,11 +245,22 @@ class ChatService:
                     is_group=is_group,
                     group_name=group_name,
                     sender_id=sender_id,
-                    is_encrypted=is_encrypted
+                    is_encrypted=is_encrypted,
+                    db=db  # Pass db to auto-deactivate invalid tokens
+                )
+                if success:
+                    success_count += 1
+                if token_invalid:
+                    invalid_tokens.append(token)
+            
+            if invalid_tokens:
+                logger.info(
+                    f"⚠️ Found {len(invalid_tokens)} invalid token(s) for receiver {receiver_id}, "
+                    f"they have been auto-deactivated"
                 )
             
             logger.info(
-                f"✅ FCM notification sent to {len(fcm_tokens)} device(s) for receiver {receiver_id} "
+                f"✅ FCM notification sent to {success_count}/{len(fcm_tokens)} device(s) for receiver {receiver_id} "
                 f"(conversation={conversation_id}, is_group={is_group})"
             )
             

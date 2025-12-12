@@ -48,13 +48,22 @@ class FCMTokenRepository:
             else:
                 logger.info(f"➕ Inserting new FCM token for user {user_id}")
                 
-                # Deactivate old tokens for this user on the same device (if device_id provided)
+                # Deactivate ALL old tokens for this user (not just same device_id)
+                # This handles the case when app is reinstalled and gets a new token
+                deactivate_result = await self.collection.update_many(
+                    {"user_id": user_id, "is_active": True},
+                    {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
+                )
+                logger.info(f"   Deactivated {deactivate_result.modified_count} old token(s) for user {user_id}")
+                
+                # Also deactivate tokens for the same device_id if provided (for multi-device scenarios)
                 if device_id:
-                    deactivate_result = await self.collection.update_many(
-                        {"user_id": user_id, "device_id": device_id},
-                        {"$set": {"is_active": False}}
+                    device_deactivate_result = await self.collection.update_many(
+                        {"user_id": user_id, "device_id": device_id, "is_active": True},
+                        {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
                     )
-                    logger.info(f"   Deactivated {deactivate_result.modified_count} old tokens")
+                    if device_deactivate_result.modified_count > 0:
+                        logger.info(f"   Deactivated {device_deactivate_result.modified_count} additional token(s) for device {device_id}")
 
                 # Insert new token
                 doc = {
