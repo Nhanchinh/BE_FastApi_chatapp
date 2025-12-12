@@ -13,7 +13,7 @@ def get_repo(db=Depends(mongo_db_dependency)) -> NotificationRepository:
 
 @router.get("")
 async def list_notifications(
-    limit: int = Query(6, ge=1, le=50),
+    limit: int = Query(50, ge=1, le=100),
     cursor: str | None = None,
     current_user: dict = Depends(get_current_user),
     repo: NotificationRepository = Depends(get_repo),
@@ -47,3 +47,26 @@ async def mark_all_notifications_read(
     updated = await repo.mark_all_read(current_user["_id"])
     return {"updated": updated}
 
+
+@router.delete("/{notification_id}")
+async def delete_notification(
+    notification_id: str,
+    current_user: dict = Depends(get_current_user),
+    repo: NotificationRepository = Depends(get_repo),
+):
+    ok = await repo.delete_notification(notification_id, current_user["_id"])
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Notification not found",
+        )
+    return {"message": "Notification deleted"}
+
+
+@router.get("/unread/count")
+async def get_unread_count(
+    current_user: dict = Depends(get_current_user),
+    repo: NotificationRepository = Depends(get_repo),
+):
+    count = await repo.count_unread(current_user["_id"])
+    return {"count": count}

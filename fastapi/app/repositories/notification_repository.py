@@ -35,12 +35,12 @@ class NotificationRepository:
         if NotificationRepository._indexes_initialized:
             return
         await self._collection.create_index("user_id", name="idx_notifications_user")
-        # TTL 3 ngày (259200 giây) - idempotent even if existed with same name
+        # TTL index dựa trên expiresAt - tự động xóa sau khi expiresAt đến
         try:
             await self._collection.create_index(
-                "created_at",
-                expireAfterSeconds=259200,
-                name="idx_notifications_ttl_created_at",
+                "expires_at",
+                expireAfterSeconds=0,  # 0 = xóa ngay khi expiresAt đến
+                name="idx_notifications_ttl_expires_at",
             )
         except OperationFailure as e:
             # Ignore if same index already exists with different generated name
@@ -63,6 +63,11 @@ class NotificationRepository:
         data: Optional[Dict[str, Any]] = None,
     ) -> str:
         await self._ensure_indexes()
+        now = datetime.now(timezone.utc)
+        # expiresAt = createdAt + 3 ngày
+        expires_at = datetime.fromtimestamp(
+            now.timestamp() + (3 * 24 * 60 * 60), tz=timezone.utc
+        )
         doc: Dict[str, Any] = {
             "user_id": user_id,
             "title": title,
@@ -72,7 +77,8 @@ class NotificationRepository:
             "from_user_name": from_user_name,
             "data": data or {},
             "is_read": False,
-            "created_at": datetime.now(timezone.utc),
+            "created_at": now,
+            "expires_at": expires_at,
         }
         result = await self._collection.insert_one(doc)
         return str(result.inserted_id)
@@ -134,4 +140,26 @@ class NotificationRepository:
     async def count_unread(self, user_id: str) -> int:
         await self._ensure_indexes()
         return await self._collection.count_documents({"user_id": user_id, "is_read": False})
+    
+    async def delete_notification(self, notification_id: str, user_id: str) -> bool:
+        """Xóa một notification cụ thể"""
+        await self._ensure_indexes()
+        result = await self._collection.delete_one(
+            {"_id": ObjectId(notification_id), "user_id": user_id}
+        )
+        return result.deleted_count > 0
+    
+    async def delete_notifications_by_type_and_from_user(
+        self, user_id: str, notif_type: str, from_user_id: str
+    ) -> int:
+        """Xóa tất cả notifications của một type và from_user_id cụ thể"""
+        await self._ensure_indexes()
+        result = await self._collection.delete_many(
+            {
+                "user_id": user_id,
+                "type": notif_type,
+                "from_user_id": from_user_id
+            }
+        )
+        return result.deleted_count
 

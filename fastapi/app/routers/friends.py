@@ -97,6 +97,15 @@ async def accept_friend_request(from_user_id: str, current_user: dict = Depends(
         accepter = await user_repo.get_user_by_id(current_user["_id"])
         requester = await user_repo.get_user_by_id(from_user_id)
         accepter_name = _display_name(accepter)
+        
+        # Xóa notification friend_request cũ của người accept
+        await notif_repo.delete_notifications_by_type_and_from_user(
+            user_id=current_user["_id"],
+            notif_type="friend_request",
+            from_user_id=from_user_id
+        )
+        
+        # Tạo notification mới cho người gửi request
         title = "Kết bạn thành công"
         body = f"{accepter_name} đã chấp nhận lời mời kết bạn"
         data = {"type": "friend_accept", "from_user_id": current_user["_id"]}
@@ -142,13 +151,29 @@ async def cancel_friend_request(user_id: str, current_user: dict = Depends(get_c
         actor = await user_repo.get_user_by_id(current_user["_id"])
         actor_name = _display_name(actor)
         target_user_id = user_id
-        title = "Lời mời kết bạn bị hủy"
+        
+        # Xóa notification friend_request cũ
         if direction == "sent":
+            # Người gửi hủy -> xóa notification của người nhận
+            await notif_repo.delete_notifications_by_type_and_from_user(
+                user_id=target_user_id,
+                notif_type="friend_request",
+                from_user_id=current_user["_id"]
+            )
+            title = "Lời mời kết bạn bị hủy"
             body = f"{actor_name} đã hủy lời mời kết bạn"
             notif_type = "friend_request_cancel"
         else:
+            # Người nhận từ chối -> xóa notification của chính họ
+            await notif_repo.delete_notifications_by_type_and_from_user(
+                user_id=current_user["_id"],
+                notif_type="friend_request",
+                from_user_id=target_user_id
+            )
+            title = "Lời mời kết bạn bị từ chối"
             body = f"{actor_name} đã từ chối lời mời kết bạn"
             notif_type = "friend_request_reject"
+        
         data = {"type": notif_type, "from_user_id": current_user["_id"]}
         await notif_repo.create_notification(
             user_id=target_user_id,
