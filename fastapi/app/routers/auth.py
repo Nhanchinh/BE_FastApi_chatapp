@@ -127,6 +127,8 @@ async def login(
     friend_repo = FriendRepository(db)
     try:
         friends = await friend_repo.list_friends(str(user["_id"]))
+        # Filter out user's own ID if it exists in friends list (bug fix)
+        friends = [f for f in friends if f != str(user["_id"])]
         friend_count = len(friends)
     except Exception:
         friend_count = 0
@@ -140,7 +142,8 @@ async def login(
         location=user.get("location"),
         hometown=user.get("hometown"),
         birth_year=user.get("birth_year"),
-        public_key=user.get("public_key")
+        public_key=user.get("public_key"),
+        avatar=user.get("avatar")
     )
     requires_public_key = not bool(user.get("public_key"))
     return LoginResponse(
@@ -194,6 +197,8 @@ async def get_my_profile(
     friend_repo = FriendRepository(db)
     try:
         friends = await friend_repo.list_friends(str(current_user["_id"]))
+        # Filter out user's own ID if it exists in friends list (bug fix)
+        friends = [f for f in friends if f != str(current_user["_id"])]
         friend_count = len(friends)
     except Exception:
         friend_count = 0
@@ -207,7 +212,8 @@ async def get_my_profile(
         hometown=current_user.get("hometown"),
         birth_year=current_user.get("birth_year"),
         friend_count=friend_count,
-        public_key=current_user.get("public_key")
+        public_key=current_user.get("public_key"),
+        avatar=current_user.get("avatar")
     )
 
 
@@ -236,6 +242,8 @@ async def update_profile(
         friend_repo = FriendRepository(db)
         try:
             friends = await friend_repo.list_friends(str(current_user["_id"]))
+            # Filter out user's own ID if it exists in friends list (bug fix)
+            friends = [f for f in friends if f != str(current_user["_id"])]
             user.friend_count = len(friends)
         except Exception:
             user.friend_count = 0

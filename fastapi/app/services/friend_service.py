@@ -70,15 +70,24 @@ class FriendService:
         friends = await self.user_repo.get_users_by_ids(friend_ids)
         detailed: List[dict] = []
         for f in friends:
+            # Filter out user's own ID from their friends list for accurate count
+            friend_list = f.get("friends", [])
+            if isinstance(friend_list, list):
+                friend_list = [fid for fid in friend_list if fid != f.get("_id")]
+                friend_count = len(friend_list)
+            else:
+                friend_count = None
+            
             detailed.append({
                 "id": f.get("_id"),
                 "email": f.get("email"),
                 "full_name": f.get("full_name"),
                 "role": f.get("role", "user"),
-                "friend_count": len(f.get("friends", [])) if isinstance(f.get("friends"), list) else None,
+                "friend_count": friend_count,
                 "location": f.get("location"),
                 "hometown": f.get("hometown"),
                 "birth_year": f.get("birth_year"),
+                "avatar": f.get("avatar"),  # Include avatar for StoryAvatar display
             })
         # Optional: maintain original order by friend_ids
         order_index = {fid: idx for idx, fid in enumerate(friend_ids)}
@@ -99,12 +108,20 @@ class FriendService:
             u = by_id.get(r.get("from_user"))
             requester = None
             if u:
+                # Filter out user's own ID from their friends list for accurate count
+                friend_list = u.get("friends", [])
+                if isinstance(friend_list, list):
+                    friend_list = [fid for fid in friend_list if fid != u.get("_id")]
+                    friend_count = len(friend_list)
+                else:
+                    friend_count = None
+                
                 requester = {
                     "id": u.get("_id"),
                     "email": u.get("email"),
                     "full_name": u.get("full_name"),
                     "role": u.get("role", "user"),
-                    "friend_count": len(u.get("friends", [])) if isinstance(u.get("friends"), list) else None,
+                    "friend_count": friend_count,
                     "location": u.get("location"),
                     "hometown": u.get("hometown"),
                     "birth_year": u.get("birth_year"),

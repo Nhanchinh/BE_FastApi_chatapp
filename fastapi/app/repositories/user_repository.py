@@ -118,4 +118,12 @@ class UserRepository:
         )
         return result.modified_count > 0
 
+    async def update_avatar(self, user_id: str, avatar_path: str) -> bool:
+        """Update user avatar path (relative path only)"""
+        result = await self._collection.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"avatar": avatar_path}}
+        )
+        return result.modified_count > 0
+
 

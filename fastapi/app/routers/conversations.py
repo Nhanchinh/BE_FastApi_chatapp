@@ -364,60 +364,111 @@ async def list_conversations(limit: int = Query(20, ge=1, le=100), cursor: Optio
     
     # Convert datetime objects to ISO format strings
     from datetime import datetime, timezone
+    from bson import ObjectId
+    
+    current_user_id = current_user["_id"]
+    
+    # Collect all other participant IDs to fetch avatars in batch
+    other_participant_ids = set()
     for item in items:
         if "last_message_at" in item and isinstance(item["last_message_at"], datetime):
             dt = item["last_message_at"]
-            # Đảm bảo datetime có timezone (UTC)
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             item["last_message_at"] = dt.isoformat()
+        
+        # Find the other participant (not current user)
+        participants = item.get("participants", [])
+        for p in participants:
+            if p != current_user_id:
+                other_participant_ids.add(p)
+                break
     
-    # Add presence data (online status) to conversations
+    # Fetch avatars for all other participants in batch
+    participant_avatars = {}
+    if other_participant_ids:
+        try:
+            user_repo = UserRepository(db)
+            participant_oids = [ObjectId(pid) for pid in other_participant_ids if ObjectId.is_valid(pid)]
+            cursor_users = user_repo.collection.find(
+                {"_id": {"$in": participant_oids}},
+                {"_id": 1, "avatar": 1}
+            )
+            async for user in cursor_users:
+                participant_avatars[str(user["_id"])] = user.get("avatar")
+        except Exception:
+            pass  # Continue without avatars if lookup fails
+    
+    # Add avatar and presence data to conversations
     if items:
         from app.utils.realtime_bus import get_bus
         bus = await get_bus()
-        current_user_id = current_user["_id"]
         
-        # Get online status for other participants in each conversation
-        if getattr(bus, "enabled", False):
-            try:
-                import redis.asyncio as redis  # type: ignore
-                r = bus._redis  # type: ignore
-                for item in items:
-                    participants = item.get("participants", [])
-                    # Find the other participant (not current user)
-                    other_participant = None
-                    for p in participants:
-                        if p != current_user_id:
-                            other_participant = p
-                            break
-                    
-                    if other_participant:
-                        try:
-                            ttl = await r.ttl(f"presence:{other_participant}")
-                            item["is_online"] = ttl and ttl > 0
-                        except Exception:
-                            item["is_online"] = False
-                    else:
-                        item["is_online"] = False
-            except Exception:
-                # If Redis fails, set all to False
-                for item in items:
+        for item in items:
+            participants = item.get("participants", [])
+            # Find the other participant (not current user)
+            other_participant = None
+            for p in participants:
+                if p != current_user_id:
+                    other_participant = p
+                    break
+            
+            # Add avatar for the other participant
+            if other_participant and other_participant in participant_avatars:
+                item["other_participant_avatar"] = participant_avatars[other_participant]
+            
+            # Get online status
+            if other_participant and getattr(bus, "enabled", False):
+                try:
+                    r = bus._redis
+                    ttl = await r.ttl(f"presence:{other_participant}")
+                    item["is_online"] = ttl and ttl > 0
+                except Exception:
                     item["is_online"] = False
-        else:
-            # No Redis, set all to False
-            for item in items:
+            else:
                 item["is_online"] = False
     
     return {"items": items, "next_cursor": next_cursor}
 
 
 @router.get("/{conversation_id}/messages")
-async def list_messages(conversation_id: str, limit: int = Query(50, ge=1, le=200), cursor: Optional[str] = None, current_user: dict = Depends(get_current_user), service: ChatService = Depends(get_chat_service)):
+async def list_messages(
+    conversation_id: str, 
+    limit: int = Query(50, ge=1, le=200), 
+    cursor: Optional[str] = None, 
+    current_user: dict = Depends(get_current_user), 
+    service: ChatService = Depends(get_chat_service),
+    db = Depends(mongo_db_dependency)
+):
     messages, next_cursor = await service.get_history(conversation_id, limit=limit, cursor=cursor)
     
-    # Convert datetime objects to ISO format strings
+    # Convert datetime objects to ISO format strings + add sender_avatar
     from datetime import datetime, timezone
+    from bson import ObjectId
+    
+    # Collect unique sender IDs to fetch avatars in batch
+    sender_ids = set()
+    for message in messages:
+        sender_id = message.get("sender_id")
+        if sender_id:
+            sender_ids.add(sender_id)
+    
+    # Fetch sender avatars from users collection
+    sender_avatars = {}
+    if sender_ids:
+        try:
+            user_repo = UserRepository(db)
+            sender_oids = [ObjectId(sid) for sid in sender_ids if ObjectId.is_valid(sid)]
+            cursor_users = user_repo.collection.find(
+                {"_id": {"$in": sender_oids}},
+                {"_id": 1, "avatar": 1}
+            )
+            async for user in cursor_users:
+                sender_avatars[str(user["_id"])] = user.get("avatar")
+        except Exception:
+            pass  # Continue without avatars if lookup fails
+    
+    # Enrich messages with sender_avatar
     for message in messages:
         if "timestamp" in message and isinstance(message["timestamp"], datetime):
             dt = message["timestamp"]
@@ -425,6 +476,11 @@ async def list_messages(conversation_id: str, limit: int = Query(50, ge=1, le=20
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             message["timestamp"] = dt.isoformat()
+        
+        # Add sender_avatar from lookup
+        sender_id = message.get("sender_id")
+        if sender_id and sender_id in sender_avatars:
+            message["sender_avatar"] = sender_avatars[sender_id]
     
     return {"items": messages, "next_cursor": next_cursor}
 

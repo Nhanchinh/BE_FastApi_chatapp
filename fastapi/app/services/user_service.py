@@ -149,6 +149,7 @@ class UserService:
                 "hometown": u.get("hometown"),
                 "birth_year": u.get("birth_year"),
                 "public_key": u.get("public_key"),
+                "avatar": u.get("avatar"),
             })
         return results
 

@@ -1,4 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+import os
+import time
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from app.database.connection import mongo_db_dependency
 from app.repositories.user_repository import UserRepository
 from app.services.user_service import UserService
@@ -7,10 +11,78 @@ from app.utils.dependencies import get_current_user
 
 router = APIRouter(prefix="/users", tags=["users"])
 
+# Avatar upload configuration
+AVATAR_DIR = "static/avatars"
+ALLOWED_CONTENT_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+
 
 def get_user_service(db = Depends(mongo_db_dependency)):
     user_repo = UserRepository(db)
     return UserService(user_repo)
+
+
+@router.post("/me/avatar")
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user),
+    db = Depends(mongo_db_dependency)
+):
+    """
+    Upload avatar for current user.
+    - Validates file type (jpeg, png, gif, webp)
+    - Saves to static/avatars/ with unique filename
+    - Stores only relative path in database
+    """
+    # Validate content type
+    if file.content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_CONTENT_TYPES)}"
+        )
+    
+    # Read file content
+    content = await file.read()
+    
+    # Validate file size
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB"
+        )
+    
+    # Create directory if not exists
+    os.makedirs(AVATAR_DIR, exist_ok=True)
+    
+    # Generate unique filename (hide user ID for security)
+    ext = file.filename.split(".")[-1] if file.filename and "." in file.filename else "jpg"
+    filename = f"{uuid.uuid4().hex}_{int(time.time())}.{ext}"
+    file_path = os.path.join(AVATAR_DIR, filename)
+    
+    # Delete old avatar file if exists (fetch from database to ensure we have latest)
+    user_repo = UserRepository(db)
+    user_data = await user_repo.get_user_by_id(current_user["_id"])
+    old_avatar = user_data.get("avatar") if user_data else None
+    if old_avatar and old_avatar.startswith("/static/avatars/"):
+        # Convert relative URL path to filesystem path
+        old_filename = old_avatar.replace("/static/avatars/", "")
+        old_file_path = os.path.join(AVATAR_DIR, old_filename)
+        if os.path.exists(old_file_path):
+            try:
+                os.remove(old_file_path)
+            except OSError:
+                pass  # Ignore deletion errors
+    
+    # Save new file
+    with open(file_path, "wb") as f:
+        f.write(content)
+    
+    # Store ONLY relative path in database
+    avatar_path = f"/static/avatars/{filename}"
+    
+    await user_repo.update_avatar(current_user["_id"], avatar_path)
+    
+    return {"avatar": avatar_path}
 
 
 @router.get("/search")
@@ -71,6 +143,8 @@ async def get_user_by_id(user_id: str, current_user: dict = Depends(get_current_
     friend_repo = FriendRepository(db)
     try:
         friends = await friend_repo.list_friends(user_id)
+        # Filter out user's own ID if it exists in friends list (bug fix)
+        friends = [f for f in friends if f != user_id]
         friend_count = len(friends)
     except Exception:
         friend_count = 0
@@ -85,6 +159,7 @@ async def get_user_by_id(user_id: str, current_user: dict = Depends(get_current_
         "hometown": user.get("hometown"),
         "birth_year": user.get("birth_year"),
         "public_key": user.get("public_key"),
+        "avatar": user.get("avatar"),
     }
 
 

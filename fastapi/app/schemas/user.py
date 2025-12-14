@@ -35,6 +35,7 @@ class UserPublic(UserBase):
     hometown: Optional[str] = None
     birth_year: Optional[int] = None
     public_key: Optional[str] = None  # RSA public key for E2EE
+    avatar: Optional[str] = None  # Relative path: /static/avatars/xxx.jpg
 
 
 class Token(BaseModel):

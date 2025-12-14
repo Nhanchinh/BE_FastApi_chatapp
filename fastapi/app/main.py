@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -62,6 +63,10 @@ app.include_router(fcm_test_router)  # Test endpoint - remove in production
 app.include_router(zego_router)
 app.include_router(notifications_router)
 
+# Mount static files for serving avatars
+# Images will be accessible at /static/avatars/filename.jpg
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 @app.get("/")
 async def root():
@@ -69,5 +74,4 @@ async def root():
     db = get_database()
     collections = await db.list_collection_names()
     return {"message": "Connected to MongoDB!", "collections": collections}
-
 
