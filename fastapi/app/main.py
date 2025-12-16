@@ -21,6 +21,7 @@ from app.routers.fcm import router as fcm_router
 from app.routers.fcm_test import router as fcm_test_router
 from app.routers.zego import router as zego_router
 from app.routers.notifications import router as notifications_router
+from app.routers.key_backup import router as key_backup_router
 from app.utils.rate_limiter import limiter
 
 
@@ -62,6 +63,7 @@ app.include_router(fcm_router)
 app.include_router(fcm_test_router)  # Test endpoint - remove in production
 app.include_router(zego_router)
 app.include_router(notifications_router)
+app.include_router(key_backup_router)
 
 # Mount static files for serving avatars
 # Images will be accessible at /static/avatars/filename.jpg
