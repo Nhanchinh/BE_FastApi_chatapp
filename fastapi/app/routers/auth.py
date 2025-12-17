@@ -39,6 +39,8 @@ RESET_TOKEN_TTL_SECONDS = 300
 
 otp_store: dict[str, dict[str, int | str]] = {}
 reset_token_store: dict[str, dict[str, int | str]] = {}
+# Store pending registrations waiting for OTP verification
+pending_registration_store: dict[str, dict] = {}
 
 
 # OTP Schemas
@@ -49,6 +51,19 @@ class OTPRequest(BaseModel):
 class VerifyOTPRequest(BaseModel):
     email: EmailStr
     otp: str
+
+
+# Registration OTP Schemas
+class RegistrationOTPRequest(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str
+
+
+class VerifyRegistrationOTPRequest(BaseModel):
+    email: EmailStr
+    otp: str
+    public_key: str | None = None  # Optional, can be set later
 
 
 class ResetPasswordRequest(BaseModel):
@@ -434,3 +449,141 @@ async def change_password(
     await user_repo.update_password_hash(current_user["_id"], new_hashed)
 
     return {"success": True, "message": "Thay đổi mật khẩu thành công"}
+
+
+# ============================================================================
+# REGISTRATION OTP ENDPOINTS
+# ============================================================================
+
+@router.post("/request-registration-otp")
+@limit_per_minute("3/minute")
+async def request_registration_otp(
+    request: Request,
+    payload: RegistrationOTPRequest,
+    db = Depends(mongo_db_dependency),
+):
+    """
+    Step 1 of registration: Request OTP for email verification.
+    Stores pending registration data and sends OTP to email.
+    """
+    email_input = payload.email.strip()
+    email_key = email_input.lower()
+    
+    # Check if email already exists
+    user_repo = UserRepository(db)
+    existing_user = await user_repo.get_user_by_email(email_input)
+    if not existing_user:
+        existing_user = await user_repo.get_user_by_email_case_insensitive(email_input)
+    
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Email đã được sử dụng. Vui lòng đăng nhập hoặc sử dụng email khác."
+        )
+    
+    # Generate OTP
+    otp = str(random.randint(100000, 999999))
+    expires = int(time.time()) + OTP_TTL_SECONDS
+    
+    # Store OTP
+    otp_store[email_key] = {"otp": otp, "expires": expires}
+    
+    # Store pending registration data
+    pending_registration_store[email_key] = {
+        "email": email_input,
+        "password": payload.password,
+        "full_name": payload.full_name,
+        "expires": expires,
+    }
+    
+    # Send OTP email
+    try:
+        await send_otp_email(email_input, otp)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Không thể gửi OTP"
+        ) from e
+    
+    return {
+        "success": True,
+        "message": "OTP đã được gửi đến email của bạn",
+        "expires_in": OTP_TTL_SECONDS
+    }
+
+
+@router.post("/verify-registration-otp")
+@limit_per_minute("10/minute")
+async def verify_registration_otp(
+    request: Request,
+    payload: VerifyRegistrationOTPRequest,
+    db = Depends(mongo_db_dependency),
+):
+    """
+    Step 2 of registration: Verify OTP and create account.
+    Returns login response (auto-login after successful registration).
+    """
+    email_key = payload.email.strip().lower()
+    
+    # Check OTP
+    otp_record = otp_store.get(email_key)
+    if not otp_record:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Không tìm thấy OTP. Vui lòng yêu cầu OTP mới.")
+    
+    if int(time.time()) > int(otp_record["expires"]):
+        del otp_store[email_key]
+        if email_key in pending_registration_store:
+            del pending_registration_store[email_key]
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP đã hết hạn. Vui lòng yêu cầu OTP mới.")
+    
+    if payload.otp != otp_record["otp"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="OTP không đúng")
+    
+    # Get pending registration data
+    pending = pending_registration_store.get(email_key)
+    if not pending:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Không tìm thấy thông tin đăng ký. Vui lòng thử lại.")
+    
+    # Create user account
+    user_repo = UserRepository(db)
+    user_service = UserService(user_repo)
+    
+    try:
+        user = await user_service.register_user(
+            email=pending["email"],
+            password=pending["password"],
+            full_name=pending["full_name"],
+            public_key=payload.public_key
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    
+    # Clean up OTP and pending registration
+    del otp_store[email_key]
+    del pending_registration_store[email_key]
+    
+    # Auto-login: Create tokens
+    token = create_access_token(subject=user.id)
+    refresh_repo = RefreshTokenRepository(db)
+    refresh_token, token_id, hashed_secret, refresh_expires_at = create_refresh_token()
+    await refresh_repo.create_refresh_token(
+        user_id=user.id,
+        token_id=token_id,
+        hashed_secret=hashed_secret,
+        expires_at=refresh_expires_at,
+    )
+    refresh_expires_in = int((refresh_expires_at - datetime.now(timezone.utc)).total_seconds())
+    
+    return {
+        "success": True,
+        "message": "Đăng ký thành công!",
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": JWT_EXPIRES_MINUTES * 60,
+        "refresh_token": refresh_token,
+        "refresh_expires_in": refresh_expires_in,
+        "user": user,
+        "requires_public_key": not bool(payload.public_key),
+    }
