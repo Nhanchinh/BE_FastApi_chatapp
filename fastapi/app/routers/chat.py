@@ -12,6 +12,8 @@ from app.utils.dependencies import get_current_user
 from app.utils.websocket_manager import ConnectionManager
 from app.utils.security import decode_access_token
 from app.utils.realtime_bus import get_bus
+from app.repositories.user_repository import UserRepository
+from bson import ObjectId
 import asyncio
 
 
@@ -182,6 +184,23 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                     if media_duration is not None:
                         ack["media_duration"] = media_duration
                 await websocket.send_text(json.dumps({"ack": ack}))
+                
+                # Fetch sender info for avatar
+                sender_avatar = None
+                sender_name = None
+                try:
+                    user_repo = UserRepository(db)
+                    sender = await user_repo.collection.find_one(
+                        {"_id": ObjectId(msg["from"])},
+                        {"avatar": 1, "full_name": 1}
+                    )
+                    if sender:
+                        sender_avatar = sender.get("avatar")
+                        sender_name = sender.get("full_name")
+                    print(f"[WS DEBUG] sender_id={msg['from']}, sender_avatar={sender_avatar}, sender_name={sender_name}")
+                except Exception as e:
+                    print(f"[WS DEBUG] Error fetching sender: {e}")
+                
                 payload = json.dumps({
                     "type": "message",
                     "from": msg["from"],
@@ -197,6 +216,8 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                     "conversation_id": conversation_id,
                     "key_version": key_version,
                     "message_type": message_type,
+                    "sender_avatar": sender_avatar,
+                    "sender_name": sender_name,
                 })
                 targets = [p for p in participants if p != msg["from"]]
                 for target in targets:
@@ -256,6 +277,23 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                     ack["ack"]["media_duration"] = media_duration
             # gửi ack về cho sender
             await websocket.send_text(json.dumps(ack))
+            
+            # Fetch sender info for avatar
+            sender_avatar = None
+            sender_name = None
+            try:
+                user_repo = UserRepository(db)
+                sender = await user_repo.collection.find_one(
+                    {"_id": ObjectId(msg["from"])},
+                    {"avatar": 1, "full_name": 1}
+                )
+                if sender:
+                    sender_avatar = sender.get("avatar")
+                    sender_name = sender.get("full_name")
+                print(f"[WS DEBUG 1-1] sender_id={msg['from']}, sender_avatar={sender_avatar}")
+            except Exception as e:
+                print(f"[WS DEBUG 1-1] Error: {e}")
+            
             # đẩy message realtime tới receiver
             payload = json.dumps({
                 "type": "message",
@@ -270,6 +308,8 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
                 "media_duration": media_duration,
                 "reply_to": reply_to,
                 "message_type": message_type,
+                "sender_avatar": sender_avatar,
+                "sender_name": sender_name,
             })
             if getattr(bus, "enabled", False):
                 await (await get_bus()).publish(f"user:{msg['to']}", payload)
@@ -316,7 +356,6 @@ async def chat_socket(websocket: WebSocket, user_id: str, service: ChatService =
         if not has_other_connections:
             # User has no more connections, mark as offline
             try:
-                from app.repositories.user_repository import UserRepository
                 user_repo = UserRepository(db)
                 await user_repo.update_last_seen(user_id)
             except Exception:
