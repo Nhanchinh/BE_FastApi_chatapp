@@ -29,6 +29,12 @@ from app.utils.rate_limiter import limiter
 async def lifespan(app: FastAPI):
 
     await connect_to_mongo()
+    
+    # Tạo TTL index để tự động xóa refresh token hết hạn
+    from app.repositories.refresh_token_repository import RefreshTokenRepository
+    refresh_repo = RefreshTokenRepository(get_database())
+    await refresh_repo.ensure_indexes()
+    
     try:
         yield
     finally:

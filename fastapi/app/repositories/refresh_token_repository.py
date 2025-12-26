@@ -10,6 +10,14 @@ class RefreshTokenRepository:
     def __init__(self, db: AsyncIOMotorDatabase) -> None:
         self._collection = db.get_collection("refresh_tokens")
 
+    async def ensure_indexes(self) -> None:
+        """Tạo TTL index để MongoDB tự động xóa token hết hạn."""
+        await self._collection.create_index(
+            "expires_at",
+            expireAfterSeconds=0,
+            name="ttl_expires_at"
+        )
+
     async def create_refresh_token(
         self,
         user_id: str,
