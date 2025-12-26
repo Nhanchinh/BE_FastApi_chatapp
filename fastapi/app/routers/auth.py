@@ -124,15 +124,16 @@ async def login(
     """
     # --- SECURITY CHECK: APP SIGNATURE ---
     # Mã SHA-256 từ keystore debug hiện tại của client
-    VALID_SIGNATURE = "22:9D:FA:84:FA:0C:C9:F9:35:8E:29:5A:96:A9:08:3D:03:90:1B:CB:41:38:9A:46:C8:79:B8:96:DD:C6:93:77"
+    # TODO: Uncomment khi deploy production để chống unauthorized clients
+    # VALID_SIGNATURE = "22:9D:FA:84:FA:0C:C9:F9:35:8E:29:5A:96:A9:08:3D:03:90:1B:CB:41:38:9A:46:C8:79:B8:96:DD:C6:93:77"
     
     # Cho phép bỏ qua check nếu là request từ Swagger UI (thường không có header này) hoặc môi trường dev
     # Nhưng để bảo mật chặt chẽ, ta bắt buộc phải có.
     # Tuy nhiên, để tránh block bạn test API bằng Swagger, tôi sẽ cho phép nếu x_app_signature là None (tạm thời) HOẶC khớp.
     # NẾU BẠN MUỐN CHẶN TRIỆT ĐỂ: Xóa 'or x_app_signature is None'
     
-    if x_app_signature and x_app_signature != VALID_SIGNATURE:
-         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ứng dụng không hợp lệ (Invalid Signature)")
+    # if x_app_signature and x_app_signature != VALID_SIGNATURE:
+    #      raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ứng dụng không hợp lệ (Invalid Signature)")
     
     # --- ACCOUNT LOCKOUT CHECK ---
     login_attempts_repo = LoginAttemptsRepository(db)
