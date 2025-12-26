@@ -9,6 +9,7 @@ from pydantic import BaseModel, EmailStr
 from app.database.connection import mongo_db_dependency
 from app.repositories.user_repository import UserRepository
 from app.repositories.refresh_token_repository import RefreshTokenRepository
+from app.repositories.login_attempts_repository import LoginAttemptsRepository
 from app.schemas.user import (
     UserCreate,
     UserPublic,
@@ -133,13 +134,39 @@ async def login(
     if x_app_signature and x_app_signature != VALID_SIGNATURE:
          raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Ứng dụng không hợp lệ (Invalid Signature)")
     
+    # --- ACCOUNT LOCKOUT CHECK ---
+    login_attempts_repo = LoginAttemptsRepository(db)
+    is_locked, remaining_seconds = await login_attempts_repo.is_locked(form_data.username)
+    
+    if is_locked:
+        remaining_minutes = (remaining_seconds // 60) + 1
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail=f"Tài khoản bị khóa tạm thời. Vui lòng thử lại sau {remaining_minutes} phút."
+        )
     # -------------------------------------
 
     # Xác thực user qua Service
     user = await user_service.authenticate_user(form_data.username, form_data.password)
     
     if not user:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect email or password")
+        # Tăng counter login sai
+        attempts, is_now_locked, lockout_seconds = await login_attempts_repo.increment_attempts(form_data.username)
+        
+        if is_now_locked:
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail=f"Quá nhiều lần đăng nhập sai. Tài khoản bị khóa trong {lockout_seconds // 60} phút."
+            )
+        
+        remaining_attempts = LoginAttemptsRepository.MAX_ATTEMPTS - attempts
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail=f"Sai email hoặc mật khẩu. Còn {remaining_attempts} lần thử."
+        )
+    
+    # Login thành công - reset counter
+    await login_attempts_repo.reset_attempts(form_data.username)
     
     # Tạo access token + refresh token
     token = create_access_token(subject=user["_id"])
